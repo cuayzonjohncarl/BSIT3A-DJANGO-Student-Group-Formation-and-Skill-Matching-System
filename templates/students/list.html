@@ -1,0 +1,312 @@
+{% extends "theme/base.html" %}
+{% block content %}
+<div class="container-xl">
+  <div class="page-header d-print-none" aria-label="Page header">
+    <div class="container-xl">
+      <div class="row align-items-center">
+        <div class="col">
+          <div class="page-pretitle">Overview</div>
+          <div class="d-flex align-items-center gap-3 flex-wrap d-none d-md-flex">
+            <h2 class="page-title mb-0">Student Management</h2>
+          </div>
+          <h2 class="page-title mb-0 d-md-none">Student Management</h2>
+        </div>
+      </div>
+    </div>
+  </div>
+  <br>
+
+  <div class="d-flex flex-column flex-md-row align-items-start align-items-md-center justify-content-between gap-2 mb-1">
+    <form method="GET" class="w-100" style="max-width: 420px;">
+      <div class="input-group">
+        <span class="input-group-text"><i class="ti ti-search"></i></span>
+        <input type="text" name="q" value="{{ query }}" class="form-control" placeholder="Search by student no., name, course, or section...">
+        {% if query %}
+        <a href="{% url 'students:student_list' %}" class="btn btn-outline-secondary">Clear</a>
+        {% endif %}
+        <button type="submit" class="btn btn-primary">Search</button>
+      </div>
+    </form>
+
+    <button type="button" class="btn btn-primary mt-n4" data-bs-toggle="modal" data-bs-target="#studentModal" data-mode="create">
+      <i class='fas fa-plus-circle me-2'></i> Add Student
+    </button>
+  </div>
+
+  <div class="toast-container position-fixed top-0 end-0 p-3" id="studentToastContainer" aria-live="polite" aria-atomic="true">
+    {% for message in messages %}
+    <div class="toast bg-info-lt" role="status" aria-atomic="true" data-bs-delay="4000" style="--tblr-toast-color: #000;">
+      <div class="d-flex">
+        <div class="toast-body">{{ message }}</div>
+        <button type="button" class="btn-close me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div id="studentAlert" class="alert alert-danger d-none" role="alert"></div>
+
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">
+        All Students
+        {% if query %}
+        <span class="text-muted fw-normal">— search results for "{{ query }}"</span>
+        {% endif %}
+      </div>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-vcenter table-hover card-table text-nowrap" id="studentTable">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Student No.</th>
+            <th>Name</th>
+            <th>Email</th>
+            <th>Course</th>
+            <th>Section</th>
+            <th class="w-1">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="studentTableBody">
+        {% for student in students %}
+        <tr data-row-id="{{ student.student_id }}">
+            <td class="text-muted">{{ forloop.counter0|add:students.start_index }}</td>
+            <td><span class="badge bg-primary-lt text-primary">{{ student.student_number }}</span></td>
+            <td class="fw-semibold">{{ student.last_name }}, {{ student.first_name }}</td>
+            <td class="text-muted">{{ student.email|default:"—" }}</td>
+            <td class="text-muted">{{ student.course }}</td>
+            <td class="text-muted">{{ student.section }}</td>
+            <td>
+              <div class="d-flex gap-1">
+                <button type="button" class="btn btn-ghost-secondary btn-icon btn-sm" data-bs-toggle="modal" data-bs-target="#studentModal" data-mode="edit" data-id="{{ student.student_id }}" data-student-number="{{ student.student_number }}" data-first-name="{{ student.first_name }}" data-last-name="{{ student.last_name }}" data-email="{{ student.email }}" data-course="{{ student.course }}" data-section="{{ student.section }}" title="Edit">
+                  <i class="fas fa-edit text-primary"></i>
+                </button>
+                <button type="button" class="btn btn-ghost-secondary btn-icon btn-sm" data-bs-toggle="modal" data-bs-target="#deleteStudentModal" data-id="{{ student.student_id }}" data-name="{{ student.first_name }} {{ student.last_name }}" title="Delete">
+                  <i class="fas fa-trash-alt text-danger"></i>
+                </button>
+              </div>
+            </td>
+        </tr>
+        {% empty %}
+        <tr>
+            <td colspan="7">
+                <div class="empty py-5">
+                    <div class="empty-icon">
+                        <i class="fas fa-user-graduate fa-2x text-muted"></i>
+                    </div>
+                    <p class="empty-title">No students found</p>
+                    <p class="empty-subtitle">Try adjusting your search or add a new student.</p>
+                    <div class="empty-action">
+                        <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#studentModal" data-mode="create">
+                            <i class="fas fa-plus-circle me-2"></i> Add Student
+                        </button>
+                    </div>
+                </div>
+            </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if students.paginator.num_pages > 1 %}
+    <div class="card-footer d-flex align-items-center">
+      <p class="m-0 text-muted">
+        Showing <span class="fw-medium">{{ students.start_index }}</span>
+        to <span class="fw-medium">{{ students.end_index }}</span>
+        of <span class="fw-medium">{{ students.paginator.count }}</span> students
+      </p>
+      <ul class="pagination m-0 ms-auto">
+        {% if students.has_previous %}
+        <li class="page-item">
+          <a class="page-link" href="?page={{ students.previous_page_number }}{% if query %}&q={{ query }}{% endif %}">
+            <i class="ti ti-chevron-left"></i> prev
+          </a>
+        </li>
+        {% endif %}
+        {% for num in students.paginator.page_range %}
+        <li class="page-item {% if students.number == num %}active{% endif %}">
+          <a class="page-link" href="?page={{ num }}{% if query %}&q={{ query }}{% endif %}">{{ num }}</a>
+        </li>
+        {% endfor %}
+        {% if students.has_next %}
+        <li class="page-item">
+          <a class="page-link" href="?page={{ students.next_page_number }}{% if query %}&q={{ query }}{% endif %}">
+            next <i class="ti ti-chevron-right"></i>
+          </a>
+        </li>
+        {% endif %}
+      </ul>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="modal modal-blur fade" id="studentModal" tabindex="-1">
+  <div class="modal-dialog modal-md modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="studentModalTitle">Add Student</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form id="studentForm">
+        {% csrf_token %}
+        <input type="hidden" name="student_id" id="student_id">
+        <div class="modal-body">
+          <div id="studentFormError" class="alert alert-danger d-none"></div>
+          <div class="row g-3">
+            <div class="col-12">
+              <label class="form-label">Student Number</label>
+              <input type="text" name="student_number" id="student_number" class="form-control" required>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">First Name</label>
+              <input type="text" name="first_name" id="student_first_name" class="form-control" required>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Last Name</label>
+              <input type="text" name="last_name" id="student_last_name" class="form-control" required>
+            </div>
+            <div class="col-12">
+              <label class="form-label">Email</label>
+              <input type="email" name="email" id="student_email" class="form-control" required>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Course</label>
+              <input type="text" name="course" id="student_course" class="form-control" required>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Section</label>
+              <input type="text" name="section" id="student_section" class="form-control" required>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-ghost-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="studentSubmitBtn">Save Student</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="modal modal-blur fade" id="deleteStudentModal" tabindex="-1">
+  <div class="modal-dialog modal-sm modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Delete Student</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p>Are you sure you want to delete <strong id="deleteStudentName"></strong>?</p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-danger" id="confirmDeleteStudentBtn">Delete</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function() {
+  const modalEl = document.getElementById('studentModal');
+  const deleteModalEl = document.getElementById('deleteStudentModal');
+  const form = document.getElementById('studentForm');
+  const alertBox = document.getElementById('studentAlert');
+  const title = document.getElementById('studentModalTitle');
+  const submitBtn = document.getElementById('studentSubmitBtn');
+  const deleteBtn = document.getElementById('confirmDeleteStudentBtn');
+  const deleteName = document.getElementById('deleteStudentName');
+  let currentStudentId = null;
+
+  document.querySelectorAll('#studentToastContainer .toast').forEach(function(toastEl) {
+    bootstrap.Toast.getOrCreateInstance(toastEl).show();
+  });
+
+  function resetForm() {
+    form.reset();
+    document.getElementById('student_id').value = '';
+    title.textContent = 'Add Student';
+    submitBtn.textContent = 'Save Student';
+    alertBox.classList.add('d-none');
+    alertBox.textContent = '';
+    currentStudentId = null;
+  }
+
+  modalEl.addEventListener('show.bs.modal', function(event) {
+    const button = event.relatedTarget;
+    if (!button) {
+      resetForm();
+      return;
+    }
+
+    const mode = button.getAttribute('data-mode');
+    if (mode === 'edit') {
+      const id = button.getAttribute('data-id');
+      title.textContent = 'Edit Student';
+      submitBtn.textContent = 'Update Student';
+      currentStudentId = id;
+      document.getElementById('student_id').value = id;
+      document.getElementById('student_number').value = button.getAttribute('data-student-number');
+      document.getElementById('student_first_name').value = button.getAttribute('data-first-name');
+      document.getElementById('student_last_name').value = button.getAttribute('data-last-name');
+      document.getElementById('student_email').value = button.getAttribute('data-email');
+      document.getElementById('student_course').value = button.getAttribute('data-course');
+      document.getElementById('student_section').value = button.getAttribute('data-section');
+    } else {
+      resetForm();
+    }
+  });
+
+  deleteModalEl.addEventListener('show.bs.modal', function(event) {
+    const button = event.relatedTarget;
+    if (button) {
+      currentStudentId = button.getAttribute('data-id');
+      deleteName.textContent = button.getAttribute('data-name');
+    }
+  });
+
+  form.addEventListener('submit', function(e) {
+    e.preventDefault();
+    const formData = new FormData(form);
+
+    fetch('{% url "students:student_save_ajax" %}', {
+      method: 'POST',
+      headers: {'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value},
+      body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+      if (data.error) {
+        alertBox.textContent = data.error;
+        alertBox.classList.remove('d-none');
+        return;
+      }
+      window.location.reload();
+    })
+    .catch(() => {
+      alertBox.textContent = 'Something went wrong.';
+      alertBox.classList.remove('d-none');
+    });
+  });
+
+  deleteBtn.addEventListener('click', function() {
+    if (!currentStudentId) return;
+    fetch('/students/ajax/delete/' + currentStudentId + '/', {
+      method: 'POST',
+      headers: {'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value}
+    })
+    .then(response => response.json())
+    .then(data => {
+      if (data.status === 'deleted') {
+        window.location.reload();
+      }
+    });
+  });
+})();
+</script>
+{% endblock %}
