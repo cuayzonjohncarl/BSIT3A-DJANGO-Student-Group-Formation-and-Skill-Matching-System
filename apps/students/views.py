@@ -9,7 +9,7 @@ from django.core.validators import validate_email
 from django.db import IntegrityError
 from django.db.models import Q
 
-from .models import Student
+from .models import Skill, Student, StudentSkill
 
 
 def _student_data(student):
@@ -179,4 +179,356 @@ def student_delete_ajax(request, pk):
     student_name = f'{student.first_name} {student.last_name}'
     student.delete()
     messages.success(request, f'Student "{student_name}" has been deleted successfully.')
+    return JsonResponse({'status': 'deleted'})
+
+
+# ---------------------------------------------------------------------------
+# Skills management
+# ---------------------------------------------------------------------------
+
+def _parse_int(raw_value):
+    """Convert a posted value to an integer, returning None when invalid."""
+    try:
+        return int(raw_value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _skill_data(skill):
+    """Return the JSON-serializable representation of a skill record."""
+    return {
+        'skill_id': skill.skill_id,
+        'skill_name': skill.skill_name,
+        'description': skill.description or '',
+    }
+
+
+@login_required(login_url='login')
+def skill_list_page(request):
+    """Render the searchable, paginated skill list."""
+    query = request.GET.get('q', '').strip()
+
+    skills_list = Skill.objects.all()
+
+    if query:
+        skills_list = skills_list.filter(
+            Q(skill_name__icontains=query) |
+            Q(description__icontains=query)
+        )
+
+    paginator = Paginator(skills_list, 10)
+    page_number = request.GET.get('page', 1)
+    skills = paginator.get_page(page_number)
+
+    return render(request, 'students/skills.html', {
+        'skills': skills,
+        'query': query,
+    })
+
+
+@login_required(login_url='login')
+def skill_list_ajax(request):
+    """Return the filtered skill records as paginated JSON."""
+    query = request.GET.get('q', '').strip()
+
+    skills_list = Skill.objects.all()
+
+    if query:
+        skills_list = skills_list.filter(
+            Q(skill_name__icontains=query) |
+            Q(description__icontains=query)
+        )
+
+    paginator = Paginator(skills_list, 10)
+    page_number = request.GET.get('page', 1)
+    skills = paginator.get_page(page_number)
+    data = [_skill_data(s) for s in skills.object_list]
+    return JsonResponse({
+        'data': data,
+        'has_next': skills.has_next(),
+        'has_prev': skills.has_previous(),
+        'page': skills.number,
+        'pages': skills.paginator.num_pages,
+        'total': skills.paginator.count,
+    })
+
+
+@login_required(login_url='login')
+def skill_get_ajax(request, pk):
+    """Return a single skill record as JSON."""
+    skill = get_object_or_404(Skill, pk=pk)
+    return JsonResponse(_skill_data(skill))
+
+
+@login_required(login_url='login')
+@require_POST
+def skill_save_ajax(request):
+    """Validate and create or update a skill record, returning its data as JSON."""
+    skill_id = request.POST.get('skill_id')
+
+    if skill_id:
+        skill_pk = _parse_int(skill_id)
+        if skill_pk is None:
+            return JsonResponse({'error': 'Invalid skill reference.'}, status=400)
+        skill = get_object_or_404(Skill, pk=skill_pk)
+        is_update = True
+    else:
+        skill = Skill()
+        is_update = False
+
+    skill_name = request.POST.get('skill_name', '').strip()
+    description = request.POST.get('description', '').strip()
+
+    if not skill_name:
+        return JsonResponse({'error': 'Skill name is required.'}, status=400)
+
+    # The `skills` table has no unique constraint on skill_name, so duplicate
+    # prevention is enforced here (case-insensitively) rather than in the schema.
+    duplicates = Skill.objects.filter(skill_name__iexact=skill_name)
+    if skill.pk:
+        duplicates = duplicates.exclude(pk=skill.pk)
+    if duplicates.exists():
+        return JsonResponse(
+            {'error': 'A skill with that name already exists.'},
+            status=400
+        )
+
+    skill.skill_name = skill_name
+    skill.description = description or None
+
+    try:
+        skill.save()
+    except IntegrityError:
+        return JsonResponse(
+            {'error': 'Could not save record due to a conflict.'},
+            status=400
+        )
+
+    messages.success(
+        request,
+        f'Skill "{skill.skill_name}" has been '
+        f'{"updated" if is_update else "saved"} successfully.'
+    )
+
+    payload = {'status': 'success'}
+    payload.update(_skill_data(skill))
+    return JsonResponse(payload)
+
+
+@login_required(login_url='login')
+@require_POST
+def skill_delete_ajax(request, pk):
+    """Delete the specified skill record and confirm as JSON."""
+    skill = get_object_or_404(Skill, pk=pk)
+
+    # The student_skills and project_required_skills foreign keys are RESTRICT,
+    # so a skill that is still referenced cannot be deleted. Report it clearly
+    # instead of letting the database raise an error.
+    if skill.student_skills.exists():
+        return JsonResponse(
+            {'error': 'This skill is assigned to students. Remove those '
+                      'assignments before deleting it.'},
+            status=400
+        )
+
+    if skill.project_required_skills.exists():
+        return JsonResponse(
+            {'error': 'This skill is required by a project. Remove those '
+                      'requirements before deleting it.'},
+            status=400
+        )
+
+    skill_name = skill.skill_name
+    skill.delete()
+    messages.success(request, f'Skill "{skill_name}" has been deleted successfully.')
+    return JsonResponse({'status': 'deleted'})
+
+
+# ---------------------------------------------------------------------------
+# Student-skill management
+# ---------------------------------------------------------------------------
+
+def _parse_proficiency(raw_value):
+    """Convert a posted proficiency value to an integer, or None when invalid.
+
+    The `student_skills.proficiency_level` column is a plain integer with no
+    range or enumeration constraint, so only numeric validity is enforced here.
+    """
+    return _parse_int(raw_value)
+
+
+def _student_skill_data(student_skill):
+    """Return the JSON-serializable representation of a student-skill record."""
+    return {
+        'student_skill_id': student_skill.student_skill_id,
+        'student_id': student_skill.student_id,
+        'student_name': (
+            f'{student_skill.student.last_name}, {student_skill.student.first_name}'
+        ),
+        'student_number': student_skill.student.student_number,
+        'skill_id': student_skill.skill_id,
+        'skill_name': student_skill.skill.skill_name,
+        'proficiency_level': student_skill.proficiency_level,
+    }
+
+
+@login_required(login_url='login')
+def student_skill_list_page(request):
+    """Render the searchable, paginated student-skill assignment list."""
+    query = request.GET.get('q', '').strip()
+
+    assignments_list = StudentSkill.objects.select_related('student', 'skill')
+
+    if query:
+        assignments_list = assignments_list.filter(
+            Q(student__first_name__icontains=query) |
+            Q(student__last_name__icontains=query) |
+            Q(student__student_number__icontains=query) |
+            Q(skill__skill_name__icontains=query)
+        )
+
+    paginator = Paginator(assignments_list, 10)
+    page_number = request.GET.get('page', 1)
+    assignments = paginator.get_page(page_number)
+
+    return render(request, 'students/student_skills.html', {
+        'assignments': assignments,
+        'query': query,
+        'all_students': Student.objects.all(),
+        'all_skills': Skill.objects.all(),
+    })
+
+
+@login_required(login_url='login')
+def student_skill_list_ajax(request):
+    """Return the filtered student-skill records as paginated JSON."""
+    query = request.GET.get('q', '').strip()
+
+    assignments_list = StudentSkill.objects.select_related('student', 'skill')
+
+    if query:
+        assignments_list = assignments_list.filter(
+            Q(student__first_name__icontains=query) |
+            Q(student__last_name__icontains=query) |
+            Q(student__student_number__icontains=query) |
+            Q(skill__skill_name__icontains=query)
+        )
+
+    paginator = Paginator(assignments_list, 10)
+    page_number = request.GET.get('page', 1)
+    assignments = paginator.get_page(page_number)
+    data = [_student_skill_data(a) for a in assignments.object_list]
+    return JsonResponse({
+        'data': data,
+        'has_next': assignments.has_next(),
+        'has_prev': assignments.has_previous(),
+        'page': assignments.number,
+        'pages': assignments.paginator.num_pages,
+        'total': assignments.paginator.count,
+    })
+
+
+@login_required(login_url='login')
+def student_skill_get_ajax(request, pk):
+    """Return a single student-skill assignment as JSON."""
+    assignment = get_object_or_404(
+        StudentSkill.objects.select_related('student', 'skill'), pk=pk
+    )
+    return JsonResponse(_student_skill_data(assignment))
+
+
+@login_required(login_url='login')
+@require_POST
+def student_skill_save_ajax(request):
+    """Validate and create or update a student-skill assignment as JSON."""
+    assignment_id = request.POST.get('student_skill_id')
+
+    if assignment_id:
+        assignment_pk = _parse_int(assignment_id)
+        if assignment_pk is None:
+            return JsonResponse({'error': 'Invalid assignment reference.'}, status=400)
+        assignment = get_object_or_404(StudentSkill, pk=assignment_pk)
+        is_update = True
+    else:
+        assignment = StudentSkill()
+        is_update = False
+
+    student_id = request.POST.get('student_id', '').strip()
+    skill_id = request.POST.get('skill_id', '').strip()
+    proficiency_raw = request.POST.get('proficiency_level', '').strip()
+
+    if not student_id:
+        return JsonResponse({'error': 'Please select a student.'}, status=400)
+
+    if not skill_id:
+        return JsonResponse({'error': 'Please select a skill.'}, status=400)
+
+    if proficiency_raw == '':
+        return JsonResponse({'error': 'Proficiency level is required.'}, status=400)
+
+    proficiency = _parse_proficiency(proficiency_raw)
+    if proficiency is None:
+        return JsonResponse(
+            {'error': 'Proficiency level must be a whole number.'},
+            status=400
+        )
+
+    student_pk = _parse_int(student_id)
+    if student_pk is None:
+        return JsonResponse({'error': 'Invalid student reference.'}, status=400)
+
+    skill_pk = _parse_int(skill_id)
+    if skill_pk is None:
+        return JsonResponse({'error': 'Invalid skill reference.'}, status=400)
+
+    student = get_object_or_404(Student, pk=student_pk)
+    skill = get_object_or_404(Skill, pk=skill_pk)
+
+    # The student_skills table has no unique constraint on (student_id,
+    # skill_id), so duplicate assignments are prevented here instead.
+    duplicates = StudentSkill.objects.filter(student=student, skill=skill)
+    if assignment.pk:
+        duplicates = duplicates.exclude(pk=assignment.pk)
+    if duplicates.exists():
+        return JsonResponse(
+            {'error': 'That skill is already assigned to the selected student.'},
+            status=400
+        )
+
+    assignment.student = student
+    assignment.skill = skill
+    assignment.proficiency_level = proficiency
+
+    try:
+        assignment.save()
+    except IntegrityError:
+        return JsonResponse(
+            {'error': 'Could not save assignment due to a conflict.'},
+            status=400
+        )
+
+    messages.success(
+        request,
+        f'Skill "{skill.skill_name}" for "{student.first_name} {student.last_name}" '
+        f'has been {"updated" if is_update else "assigned"} successfully.'
+    )
+
+    payload = {'status': 'success'}
+    payload.update(_student_skill_data(assignment))
+    return JsonResponse(payload)
+
+
+@login_required(login_url='login')
+@require_POST
+def student_skill_delete_ajax(request, pk):
+    """Delete the specified student-skill assignment and confirm as JSON."""
+    assignment = get_object_or_404(
+        StudentSkill.objects.select_related('student', 'skill'), pk=pk
+    )
+    label = (
+        f'{assignment.student.last_name}, {assignment.student.first_name}'
+        f' - {assignment.skill.skill_name}'
+    )
+    assignment.delete()
+    messages.success(request, f'Assignment "{label}" has been removed successfully.')
     return JsonResponse({'status': 'deleted'})

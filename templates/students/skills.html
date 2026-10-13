@@ -1,0 +1,290 @@
+{% extends "theme/base.html" %}
+{% block content %}
+<div class="container-xl">
+  <div class="page-header d-print-none" aria-label="Page header">
+    <div class="container-xl">
+      <div class="row align-items-center">
+        <div class="col">
+          <div class="page-pretitle">Overview</div>
+          <div class="d-flex align-items-center gap-3 flex-wrap d-none d-md-flex">
+            <h2 class="page-title mb-0">Skills Management</h2>
+          </div>
+          <h2 class="page-title mb-0 d-md-none">Skills Management</h2>
+        </div>
+      </div>
+    </div>
+  </div>
+  <br>
+
+  <div class="d-flex flex-column flex-md-row align-items-start align-items-md-center justify-content-between gap-2 mb-1">
+    <form method="GET" class="w-100" style="max-width: 420px;">
+      <div class="input-group">
+        <span class="input-group-text"><i class="ti ti-search"></i></span>
+        <input type="text" name="q" value="{{ query }}" class="form-control" placeholder="Search by skill name or description...">
+        {% if query %}
+        <a href="{% url 'students:skill_list' %}" class="btn btn-outline-secondary">Clear</a>
+        {% endif %}
+        <button type="submit" class="btn btn-primary">Search</button>
+      </div>
+    </form>
+
+    <button type="button" class="btn btn-primary mt-n4" data-bs-toggle="modal" data-bs-target="#skillModal" data-mode="create">
+      <i class='fas fa-plus-circle me-2'></i> Add Skill
+    </button>
+  </div>
+
+  <div class="toast-container position-fixed top-0 end-0 p-3" id="skillToastContainer" aria-live="polite" aria-atomic="true">
+    {% for message in messages %}
+    <div class="toast bg-info-lt" role="status" aria-atomic="true" data-bs-delay="4000" style="--tblr-toast-color: #000;">
+      <div class="d-flex">
+        <div class="toast-body">{{ message }}</div>
+        <button type="button" class="btn-close me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div id="skillAlert" class="alert alert-danger d-none" role="alert"></div>
+
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">
+        All Skills
+        {% if query %}
+        <span class="text-muted fw-normal">— search results for "{{ query }}"</span>
+        {% endif %}
+      </div>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-vcenter table-hover card-table text-nowrap" id="skillTable">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Skill Name</th>
+            <th>Description</th>
+            <th class="w-1">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="skillTableBody">
+        {% for skill in skills %}
+        <tr data-row-id="{{ skill.skill_id }}">
+            <td class="text-muted">{{ forloop.counter0|add:skills.start_index }}</td>
+            <td class="fw-semibold">{{ skill.skill_name }}</td>
+            <td class="text-muted">{{ skill.description|default:"—"|truncatechars:80 }}</td>
+            <td>
+              <div class="d-flex gap-1">
+                <button type="button" class="btn btn-ghost-secondary btn-icon btn-sm" data-bs-toggle="modal" data-bs-target="#skillModal" data-mode="edit" data-id="{{ skill.skill_id }}" data-skill-name="{{ skill.skill_name }}" data-description="{{ skill.description|default_if_none:'' }}" title="Edit">
+                  <i class="fas fa-edit text-primary"></i>
+                </button>
+                <button type="button" class="btn btn-ghost-secondary btn-icon btn-sm" data-bs-toggle="modal" data-bs-target="#deleteSkillModal" data-id="{{ skill.skill_id }}" data-name="{{ skill.skill_name }}" title="Delete">
+                  <i class="fas fa-trash-alt text-danger"></i>
+                </button>
+              </div>
+            </td>
+        </tr>
+        {% empty %}
+        <tr>
+            <td colspan="4">
+                <div class="empty py-5">
+                    <div class="empty-icon">
+                        <i class="fas fa-lightbulb fa-2x text-muted"></i>
+                    </div>
+                    <p class="empty-title">No skills found</p>
+                    <p class="empty-subtitle">Try adjusting your search or add a new skill.</p>
+                    <div class="empty-action">
+                        <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#skillModal" data-mode="create">
+                            <i class="fas fa-plus-circle me-2"></i> Add Skill
+                        </button>
+                    </div>
+                </div>
+            </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if skills.paginator.num_pages > 1 %}
+    <div class="card-footer d-flex align-items-center">
+      <p class="m-0 text-muted">
+        Showing <span class="fw-medium">{{ skills.start_index }}</span>
+        to <span class="fw-medium">{{ skills.end_index }}</span>
+        of <span class="fw-medium">{{ skills.paginator.count }}</span> skills
+      </p>
+      <ul class="pagination m-0 ms-auto">
+        {% if skills.has_previous %}
+        <li class="page-item">
+          <a class="page-link" href="?page={{ skills.previous_page_number }}{% if query %}&q={{ query }}{% endif %}">
+            <i class="ti ti-chevron-left"></i> prev
+          </a>
+        </li>
+        {% endif %}
+        {% for num in skills.paginator.page_range %}
+        <li class="page-item {% if skills.number == num %}active{% endif %}">
+          <a class="page-link" href="?page={{ num }}{% if query %}&q={{ query }}{% endif %}">{{ num }}</a>
+        </li>
+        {% endfor %}
+        {% if skills.has_next %}
+        <li class="page-item">
+          <a class="page-link" href="?page={{ skills.next_page_number }}{% if query %}&q={{ query }}{% endif %}">
+            next <i class="ti ti-chevron-right"></i>
+          </a>
+        </li>
+        {% endif %}
+      </ul>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="modal modal-blur fade" id="skillModal" tabindex="-1">
+  <div class="modal-dialog modal-md modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="skillModalTitle">Add Skill</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form id="skillForm">
+        {% csrf_token %}
+        <input type="hidden" name="skill_id" id="skill_id">
+        <div class="modal-body">
+          <div id="skillFormError" class="alert alert-danger d-none"></div>
+          <div class="row g-3">
+            <div class="col-12">
+              <label class="form-label">Skill Name</label>
+              <input type="text" name="skill_name" id="skill_name" class="form-control" required>
+            </div>
+            <div class="col-12">
+              <label class="form-label">Description</label>
+              <textarea name="description" id="skill_description" class="form-control" rows="3"></textarea>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-ghost-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="skillSubmitBtn">Save Skill</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="modal modal-blur fade" id="deleteSkillModal" tabindex="-1">
+  <div class="modal-dialog modal-sm modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Delete Skill</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p>Are you sure you want to delete <strong id="deleteSkillName"></strong>?</p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-danger" id="confirmDeleteSkillBtn">Delete</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function() {
+  const modalEl = document.getElementById('skillModal');
+  const deleteModalEl = document.getElementById('deleteSkillModal');
+  const form = document.getElementById('skillForm');
+  const alertBox = document.getElementById('skillAlert');
+  const title = document.getElementById('skillModalTitle');
+  const submitBtn = document.getElementById('skillSubmitBtn');
+  const deleteBtn = document.getElementById('confirmDeleteSkillBtn');
+  const deleteName = document.getElementById('deleteSkillName');
+  let currentSkillId = null;
+
+  document.querySelectorAll('#skillToastContainer .toast').forEach(function(toastEl) {
+    bootstrap.Toast.getOrCreateInstance(toastEl).show();
+  });
+
+  function resetForm() {
+    form.reset();
+    document.getElementById('skill_id').value = '';
+    title.textContent = 'Add Skill';
+    submitBtn.textContent = 'Save Skill';
+    alertBox.classList.add('d-none');
+    alertBox.textContent = '';
+    currentSkillId = null;
+  }
+
+  modalEl.addEventListener('show.bs.modal', function(event) {
+    const button = event.relatedTarget;
+    if (!button) {
+      resetForm();
+      return;
+    }
+
+    const mode = button.getAttribute('data-mode');
+    if (mode === 'edit') {
+      const id = button.getAttribute('data-id');
+      title.textContent = 'Edit Skill';
+      submitBtn.textContent = 'Update Skill';
+      currentSkillId = id;
+      document.getElementById('skill_id').value = id;
+      document.getElementById('skill_name').value = button.getAttribute('data-skill-name');
+      document.getElementById('skill_description').value = button.getAttribute('data-description');
+    } else {
+      resetForm();
+    }
+  });
+
+  deleteModalEl.addEventListener('show.bs.modal', function(event) {
+    const button = event.relatedTarget;
+    if (button) {
+      currentSkillId = button.getAttribute('data-id');
+      deleteName.textContent = button.getAttribute('data-name');
+    }
+  });
+
+  form.addEventListener('submit', function(e) {
+    e.preventDefault();
+    const formData = new FormData(form);
+
+    fetch('{% url "students:skill_save_ajax" %}', {
+      method: 'POST',
+      headers: {'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value},
+      body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+      if (data.error) {
+        alertBox.textContent = data.error;
+        alertBox.classList.remove('d-none');
+        return;
+      }
+      window.location.reload();
+    })
+    .catch(() => {
+      alertBox.textContent = 'Something went wrong.';
+      alertBox.classList.remove('d-none');
+    });
+  });
+
+  deleteBtn.addEventListener('click', function() {
+    if (!currentSkillId) return;
+    fetch('/students/skills/ajax/delete/' + currentSkillId + '/', {
+      method: 'POST',
+      headers: {'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value}
+    })
+    .then(response => response.json())
+    .then(data => {
+      if (data.status === 'deleted') {
+        window.location.reload();
+      } else if (data.error) {
+        alertBox.textContent = data.error;
+        alertBox.classList.remove('d-none');
+        bootstrap.Modal.getInstance(deleteModalEl).hide();
+      }
+    });
+  });
+})();
+</script>
+{% endblock %}
