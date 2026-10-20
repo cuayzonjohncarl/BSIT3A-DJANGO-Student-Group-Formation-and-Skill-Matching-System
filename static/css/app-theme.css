@@ -261,7 +261,7 @@ html {
 .dh-brand-name {
   display: block;
   font-weight: 800;
-  font-size: 1.05rem;
+  font-size: 0.95rem;
   letter-spacing: -0.02em;
   color: #ffffff;
   line-height: 1.15;
@@ -661,5 +661,68 @@ html {
 
   .dh-hero-title {
     font-size: 1.3rem;
+  }
+}
+
+/* =====================================================================
+   Graphite Cyber theme layer
+   Remaps the core Tabler surface / text / border tokens to a neutral
+   graphite palette and adds a CSS-only grid + geometric backdrop.
+   Declared for :root as well as both theme attribute states so the look
+   stays consistent regardless of the stored colour-mode preference.
+   ===================================================================== */
+:root,
+[data-bs-theme="light"],
+[data-bs-theme="dark"] {
+  color-scheme: dark;
+  --tblr-body-bg: #15171c;
+  --tblr-body-bg-rgb: 21, 23, 28;
+  --tblr-body-color: #dfe3ea;
+  --tblr-body-color-rgb: 223, 227, 234;
+  --tblr-muted: #8a92a3;
+  --tblr-muted-rgb: 138, 146, 163;
+  --tblr-secondary: #a7aebc;
+  --tblr-secondary-rgb: 167, 174, 188;
+  --tblr-border-color: #2a2e37;
+  --tblr-border-color-translucent: rgba(255, 255, 255, 0.08);
+  --tblr-bg-surface: #1c1f26;
+  --tblr-bg-surface-primary: #1c1f26;
+  --tblr-bg-surface-secondary: #22262e;
+  --tblr-bg-surface-tertiary: #272b34;
+  --tblr-bg-forms: #191c22;
+  --tblr-link-color: var(--tblr-primary);
+  --tblr-link-hover-color: color-mix(in srgb, var(--tblr-primary) 82%, #ffffff);
+  --tblr-table-border-color: #2a2e37;
+}
+
+body {
+  background-color: var(--tblr-body-bg);
+  background-image:
+    radial-gradient(1100px 620px at 85% -8%, rgba(var(--tblr-primary-rgb), 0.16), transparent 62%),
+    radial-gradient(920px 520px at -5% 105%, rgba(var(--tblr-primary-rgb), 0.09), transparent 58%),
+    linear-gradient(rgba(255, 255, 255, 0.032) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.032) 1px, transparent 1px);
+  background-size: auto, auto, 44px 44px, 44px 44px;
+  background-attachment: fixed, fixed, fixed, fixed;
+}
+
+.page,
+.page-body,
+.page-wrapper,
+#page-body {
+  background-color: transparent;
+}
+
+.dh-sidebar {
+  --tblr-navbar-bg: #13151a;
+  --tblr-navbar-border-color: rgba(255, 255, 255, 0.06);
+  background:
+    radial-gradient(120% 70% at 100% 0%, color-mix(in srgb, var(--tblr-primary) 16%, transparent) 0%, transparent 55%),
+    linear-gradient(180deg, #191c22 0%, #111318 100%);
+}
+
+@media (max-width: 991.98px) {
+  .dh-sidebar .navbar-collapse {
+    background: #14161b;
   }
 }

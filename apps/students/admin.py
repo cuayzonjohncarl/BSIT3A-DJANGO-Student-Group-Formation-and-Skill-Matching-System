@@ -13,8 +13,12 @@ from .models import (
 
 @admin.register(Student)
 class StudentAdmin(admin.ModelAdmin):
-    list_display = ('student_number', 'first_name', 'last_name', 'email', 'course', 'section')
-    search_fields = ('student_number', 'first_name', 'last_name', 'email', 'course', 'section')
+    list_display = ('student_number', 'first_name', 'last_name', 'email', 'course', 'section', 'get_year_level_display')
+    search_fields = ('student_number', 'first_name', 'last_name', 'email', 'course', 'section', 'year_level')
+
+    @admin.display(description='Year Level')
+    def get_year_level_display(self, obj):
+        return obj.get_year_level_display() or '—'
 
 
 @admin.register(Skill)

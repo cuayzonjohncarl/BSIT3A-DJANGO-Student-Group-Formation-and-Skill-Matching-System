@@ -13,8 +13,9 @@ from .models import (
     Skill,
     Student,
     StudentSkill,
+    YEAR_LEVEL_CHOICES,
 )
-from .views import _parse_proficiency
+from .views import _parse_proficiency, _parse_year_level
 
 
 class ModelTableMappingTests(SimpleTestCase):
@@ -104,6 +105,17 @@ class FieldShapeTests(SimpleTestCase):
         self.assertEqual(created.get_internal_type(), 'DateTimeField')
         self.assertTrue(created.auto_now_add)
 
+    def test_student_year_level_field(self):
+        field = Student._meta.get_field('year_level')
+        self.assertEqual(field.get_internal_type(), 'PositiveSmallIntegerField')
+        self.assertTrue(field.null)
+        self.assertTrue(field.blank)
+        self.assertEqual(
+            dict(field.choices),
+            {1: '1st Year', 2: '2nd Year', 3: '3rd Year', 4: '4th Year'},
+        )
+        self.assertEqual(dict(YEAR_LEVEL_CHOICES), dict(field.choices))
+
 
 class StringMethodTests(SimpleTestCase):
     """Smoke-test __str__ representations without touching the database."""
@@ -117,6 +129,7 @@ class StringMethodTests(SimpleTestCase):
             email='jane@example.com',
             course='BSIT',
             section='3A',
+            year_level=2,
         )
 
     def test_simple_str_methods(self):
@@ -126,6 +139,12 @@ class StringMethodTests(SimpleTestCase):
         self.assertEqual(str(skill), 'Python')
         self.assertEqual(str(project), 'Website')
         self.assertEqual(str(group), 'Alpha')
+
+    def test_year_level_display(self):
+        self.assertEqual(self._student().get_year_level_display(), '2nd Year')
+        self.assertEqual(
+            Student(year_level=None).get_year_level_display(), None
+        )
 
     def test_junction_str_methods(self):
         student = self._student()
@@ -187,6 +206,25 @@ class Stage2ProficiencyParsingTests(SimpleTestCase):
         for raw in ['', '   ', 'abc', '3.5', None, '1e3']:
             with self.subTest(raw=raw):
                 self.assertIsNone(_parse_proficiency(raw))
+
+
+class StudentYearLevelParsingTests(SimpleTestCase):
+    """The year level parser accepts integers 1-4 and is optional (blank -> None)."""
+
+    def test_valid_values(self):
+        for raw, expected in [('1', 1), ('2', 2), ('3', 3), ('4', 4), (' 3 ', 3)]:
+            with self.subTest(raw=raw):
+                self.assertEqual(_parse_year_level(raw), expected)
+
+    def test_blank_values_return_none(self):
+        for raw in ['', '   ', None]:
+            with self.subTest(raw=raw):
+                self.assertIsNone(_parse_year_level(raw))
+
+    def test_out_of_range_and_non_numeric_return_none(self):
+        for raw in ['0', '5', '-1', 'abc', '2.5', '1e3', '10']:
+            with self.subTest(raw=raw):
+                self.assertIsNone(_parse_year_level(raw))
 
 
 class Stage2LoginRequiredTests(TestCase):
@@ -378,6 +416,49 @@ class Stage2CrudTests(UnmanagedTablesMixin, TransactionTestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(StudentSkill.objects.count(), 0)
 
+    def test_assignment_accepts_proficiency_boundaries(self):
+        low_skill = self._create_skill(name='Python')
+        high_skill = self._create_skill(name='Java')
+
+        low = self._save_assignment(
+            student_id=str(self.student.pk), skill_id=str(low_skill.pk),
+            proficiency_level='1',
+        )
+        high = self._save_assignment(
+            student_id=str(self.student.pk), skill_id=str(high_skill.pk),
+            proficiency_level='5',
+        )
+
+        self.assertEqual(low.status_code, 200)
+        self.assertEqual(high.status_code, 200)
+        self.assertEqual(
+            StudentSkill.objects.get(skill=low_skill).proficiency_level, 1
+        )
+        self.assertEqual(
+            StudentSkill.objects.get(skill=high_skill).proficiency_level, 5
+        )
+
+    def test_assignment_rejects_out_of_range_proficiency(self):
+        skill = self._create_skill()
+        for raw in ['0', '6', '-100']:
+            with self.subTest(proficiency_level=raw):
+                response = self._save_assignment(
+                    student_id=str(self.student.pk), skill_id=str(skill.pk),
+                    proficiency_level=raw,
+                )
+                self.assertEqual(response.status_code, 400)
+                self.assertIn('error', response.json())
+        self.assertEqual(StudentSkill.objects.count(), 0)
+
+    def test_assignment_rejects_fractional_proficiency(self):
+        skill = self._create_skill()
+        response = self._save_assignment(
+            student_id=str(self.student.pk), skill_id=str(skill.pk),
+            proficiency_level='2.5',
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(StudentSkill.objects.count(), 0)
+
     def test_assignment_rejects_non_numeric_ids(self):
         response = self._save_assignment(
             student_id='abc', skill_id='xyz', proficiency_level='3'
@@ -484,3 +565,507 @@ class Stage2CrudTests(UnmanagedTablesMixin, TransactionTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'Student Skills')
         self.assertContains(response, 'Doe, Jane')
+
+    def test_student_skill_form_limits_proficiency_to_one_through_five(self):
+        response = self.client.get(reverse('students:student_skill_list'))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'min="1" max="5" name="proficiency_level"')
+
+
+class Stage3UrlResolutionTests(SimpleTestCase):
+    """Verify the Stage 3 project and project-skill routes are wired up."""
+
+    EXPECTED = {
+        '/students/projects/': 'students:project_list',
+        '/students/projects/ajax/list/': 'students:project_list_ajax',
+        '/students/projects/ajax/get/1/': 'students:project_get_ajax',
+        '/students/projects/ajax/save/': 'students:project_save_ajax',
+        '/students/projects/ajax/delete/1/': 'students:project_delete_ajax',
+        '/students/project-skills/': 'students:project_skill_list',
+        '/students/project-skills/ajax/list/': 'students:project_skill_list_ajax',
+        '/students/project-skills/ajax/get/1/': 'students:project_skill_get_ajax',
+        '/students/project-skills/ajax/save/': 'students:project_skill_save_ajax',
+        '/students/project-skills/ajax/delete/1/': 'students:project_skill_delete_ajax',
+    }
+
+    def test_paths_resolve_to_expected_view_names(self):
+        for path, view_name in self.EXPECTED.items():
+            with self.subTest(path=path):
+                self.assertEqual(resolve(path).view_name, view_name)
+
+    def test_named_urls_reverse(self):
+        self.assertEqual(reverse('students:project_list'), '/students/projects/')
+        self.assertEqual(
+            reverse('students:project_save_ajax'), '/students/projects/ajax/save/'
+        )
+        self.assertEqual(
+            reverse('students:project_skill_list'), '/students/project-skills/'
+        )
+        self.assertEqual(
+            reverse('students:project_skill_save_ajax'),
+            '/students/project-skills/ajax/save/',
+        )
+
+
+class Stage3LoginRequiredTests(TestCase):
+    """Every Stage 3 endpoint must require authentication."""
+
+    def test_anonymous_get_redirects_to_login(self):
+        for url in [
+            reverse('students:project_list'),
+            reverse('students:project_skill_list'),
+        ]:
+            with self.subTest(url=url):
+                response = self.client.get(url)
+                self.assertEqual(response.status_code, 302)
+                self.assertIn('next=', response['Location'])
+
+    def test_anonymous_post_redirects_to_login(self):
+        for url in [
+            reverse('students:project_save_ajax'),
+            reverse('students:project_delete_ajax', args=[1]),
+            reverse('students:project_skill_save_ajax'),
+            reverse('students:project_skill_delete_ajax', args=[1]),
+        ]:
+            with self.subTest(url=url):
+                response = self.client.post(url)
+                self.assertEqual(response.status_code, 302)
+                self.assertIn('next=', response['Location'])
+
+
+@skipUnless(
+    connection.vendor == 'sqlite',
+    'DB-backed Stage 3 tests run only with mysite.test_settings (SQLite).',
+)
+class Stage3ProjectCrudTests(UnmanagedTablesMixin, TransactionTestCase):
+    """Exercise the Stage 3 project create/read/update/delete flows on SQLite."""
+
+    def setUp(self):
+        ProjectRequiredSkill.objects.all().delete()
+        GroupMember.objects.all().delete()
+        Group.objects.all().delete()
+        Project.objects.all().delete()
+        StudentSkill.objects.all().delete()
+        Skill.objects.all().delete()
+        Student.objects.all().delete()
+
+        self.user = User.objects.create_user(username='tester', password='secret123')
+        self.client.force_login(self.user)
+
+    def _save_project(self, **data):
+        return self.client.post(reverse('students:project_save_ajax'), data)
+
+    def test_create_project(self):
+        response = self._save_project(project_name='Capstone', description='Final year')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['status'], 'success')
+        self.assertTrue(Project.objects.filter(project_name='Capstone').exists())
+
+    def test_create_project_requires_name(self):
+        response = self._save_project(project_name='   ', description='x')
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('error', response.json())
+        self.assertEqual(Project.objects.count(), 0)
+
+    def test_duplicate_project_name_is_rejected_case_insensitively(self):
+        Project.objects.create(project_name='Capstone')
+        response = self._save_project(project_name='capstone')
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(Project.objects.filter(project_name__iexact='capstone').count(), 1)
+
+    def test_edit_project(self):
+        project = Project.objects.create(project_name='Capstone')
+        response = self._save_project(
+            project_id=str(project.pk), project_name='Capstone II', description='updated'
+        )
+        self.assertEqual(response.status_code, 200)
+        project.refresh_from_db()
+        self.assertEqual(project.project_name, 'Capstone II')
+        self.assertEqual(project.description, 'updated')
+
+    def test_edit_project_keeps_same_name(self):
+        project = Project.objects.create(project_name='Capstone')
+        response = self._save_project(project_id=str(project.pk), project_name='Capstone')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(Project.objects.count(), 1)
+
+    def test_delete_project(self):
+        project = Project.objects.create(project_name='Capstone')
+        response = self.client.post(
+            reverse('students:project_delete_ajax', args=[project.pk])
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(Project.objects.filter(pk=project.pk).exists())
+
+    def test_project_list_and_get_endpoints(self):
+        project = Project.objects.create(project_name='Capstone')
+        list_response = self.client.get(reverse('students:project_list_ajax'))
+        self.assertEqual(list_response.status_code, 200)
+        self.assertEqual(list_response.json()['total'], 1)
+
+        search_response = self.client.get(
+            reverse('students:project_list_ajax'), {'q': 'caps'}
+        )
+        self.assertEqual(search_response.json()['total'], 1)
+
+        get_response = self.client.get(
+            reverse('students:project_get_ajax', args=[project.pk])
+        )
+        self.assertEqual(get_response.status_code, 200)
+        self.assertEqual(get_response.json()['project_name'], 'Capstone')
+
+    def test_project_list_page_renders(self):
+        Project.objects.create(project_name='Rendered Project')
+        response = self.client.get(reverse('students:project_list'))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Rendered Project')
+        self.assertContains(response, 'Projects Management')
+
+
+@skipUnless(
+    connection.vendor == 'sqlite',
+    'DB-backed Stage 3 tests run only with mysite.test_settings (SQLite).',
+)
+class Stage3ProjectSkillCrudTests(UnmanagedTablesMixin, TransactionTestCase):
+    """Exercise the Stage 3 project-required-skill CRUD flows on SQLite."""
+
+    def setUp(self):
+        ProjectRequiredSkill.objects.all().delete()
+        GroupMember.objects.all().delete()
+        Group.objects.all().delete()
+        Project.objects.all().delete()
+        StudentSkill.objects.all().delete()
+        Skill.objects.all().delete()
+        Student.objects.all().delete()
+
+        self.user = User.objects.create_user(username='tester', password='secret123')
+        self.client.force_login(self.user)
+        self.project = Project.objects.create(project_name='Capstone')
+        self.skill = Skill.objects.create(skill_name='Python')
+
+    def _save_requirement(self, **data):
+        return self.client.post(reverse('students:project_skill_save_ajax'), data)
+
+    def test_assign_required_skill_to_project(self):
+        response = self._save_requirement(
+            project_id=str(self.project.pk), skill_id=str(self.skill.pk),
+            required_level='3',
+        )
+        self.assertEqual(response.status_code, 200)
+        requirement = ProjectRequiredSkill.objects.get()
+        self.assertEqual(requirement.project_id, self.project.pk)
+        self.assertEqual(requirement.skill_id, self.skill.pk)
+        self.assertEqual(requirement.required_level, 3)
+
+    def test_requirement_requires_project_and_skill(self):
+        missing_project = self._save_requirement(
+            skill_id=str(self.skill.pk), required_level='3'
+        )
+        missing_skill = self._save_requirement(
+            project_id=str(self.project.pk), required_level='3'
+        )
+        self.assertEqual(missing_project.status_code, 400)
+        self.assertEqual(missing_skill.status_code, 400)
+        self.assertEqual(ProjectRequiredSkill.objects.count(), 0)
+
+    def test_requirement_requires_integer_level(self):
+        response = self._save_requirement(
+            project_id=str(self.project.pk), skill_id=str(self.skill.pk),
+            required_level='expert',
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(ProjectRequiredSkill.objects.count(), 0)
+
+    def test_requirement_accepts_level_boundaries(self):
+        second_skill = Skill.objects.create(skill_name='Django')
+
+        low = self._save_requirement(
+            project_id=str(self.project.pk), skill_id=str(self.skill.pk),
+            required_level='1',
+        )
+        high = self._save_requirement(
+            project_id=str(self.project.pk), skill_id=str(second_skill.pk),
+            required_level='5',
+        )
+
+        self.assertEqual(low.status_code, 200)
+        self.assertEqual(high.status_code, 200)
+        self.assertEqual(
+            ProjectRequiredSkill.objects.get(skill=self.skill).required_level, 1
+        )
+        self.assertEqual(
+            ProjectRequiredSkill.objects.get(skill=second_skill).required_level, 5
+        )
+
+    def test_requirement_rejects_out_of_range_level(self):
+        for raw in ['0', '6', '-76']:
+            with self.subTest(required_level=raw):
+                response = self._save_requirement(
+                    project_id=str(self.project.pk), skill_id=str(self.skill.pk),
+                    required_level=raw,
+                )
+                self.assertEqual(response.status_code, 400)
+                self.assertIn('error', response.json())
+        self.assertEqual(ProjectRequiredSkill.objects.count(), 0)
+
+    def test_requirement_rejects_fractional_level(self):
+        response = self._save_requirement(
+            project_id=str(self.project.pk), skill_id=str(self.skill.pk),
+            required_level='2.5',
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(ProjectRequiredSkill.objects.count(), 0)
+
+    def test_requirement_rejects_non_numeric_ids(self):
+        response = self._save_requirement(
+            project_id='abc', skill_id='xyz', required_level='3'
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('error', response.json())
+        self.assertEqual(ProjectRequiredSkill.objects.count(), 0)
+
+    def test_duplicate_requirement_is_rejected(self):
+        ProjectRequiredSkill.objects.create(
+            project=self.project, skill=self.skill, required_level=2
+        )
+        response = self._save_requirement(
+            project_id=str(self.project.pk), skill_id=str(self.skill.pk),
+            required_level='5',
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(ProjectRequiredSkill.objects.count(), 1)
+
+    def test_edit_requirement_level(self):
+        requirement = ProjectRequiredSkill.objects.create(
+            project=self.project, skill=self.skill, required_level=2
+        )
+        response = self._save_requirement(
+            project_skill_id=str(requirement.pk),
+            project_id=str(self.project.pk),
+            skill_id=str(self.skill.pk),
+            required_level='5',
+        )
+        self.assertEqual(response.status_code, 200)
+        requirement.refresh_from_db()
+        self.assertEqual(requirement.required_level, 5)
+
+    def test_delete_requirement(self):
+        requirement = ProjectRequiredSkill.objects.create(
+            project=self.project, skill=self.skill, required_level=2
+        )
+        response = self.client.post(
+            reverse('students:project_skill_delete_ajax', args=[requirement.pk])
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(ProjectRequiredSkill.objects.count(), 0)
+
+    def test_delete_project_with_required_skills_is_blocked(self):
+        ProjectRequiredSkill.objects.create(
+            project=self.project, skill=self.skill, required_level=2
+        )
+        response = self.client.post(
+            reverse('students:project_delete_ajax', args=[self.project.pk])
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertTrue(Project.objects.filter(pk=self.project.pk).exists())
+
+    def test_requirement_list_and_get_endpoints(self):
+        requirement = ProjectRequiredSkill.objects.create(
+            project=self.project, skill=self.skill, required_level=2
+        )
+        list_response = self.client.get(reverse('students:project_skill_list_ajax'))
+        self.assertEqual(list_response.status_code, 200)
+        self.assertEqual(list_response.json()['total'], 1)
+
+        search_response = self.client.get(
+            reverse('students:project_skill_list_ajax'), {'q': 'python'}
+        )
+        self.assertEqual(search_response.json()['total'], 1)
+
+        get_response = self.client.get(
+            reverse('students:project_skill_get_ajax', args=[requirement.pk])
+        )
+        self.assertEqual(get_response.status_code, 200)
+        self.assertEqual(get_response.json()['skill_name'], 'Python')
+
+    def test_project_skill_list_page_renders(self):
+        ProjectRequiredSkill.objects.create(
+            project=self.project, skill=self.skill, required_level=4
+        )
+        response = self.client.get(reverse('students:project_skill_list'))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Project Required Skills')
+        self.assertContains(response, 'Capstone')
+
+    def test_project_skill_form_limits_required_level_to_one_through_five(self):
+        response = self.client.get(reverse('students:project_skill_list'))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'min="1" max="5" name="required_level"')
+
+
+@skipUnless(
+    connection.vendor == 'sqlite',
+    'DB-backed student tests run only with mysite.test_settings (SQLite).',
+)
+class StudentYearLevelCrudTests(UnmanagedTablesMixin, TransactionTestCase):
+    """Exercise the optional Year Level (1-4) behaviour of student records."""
+
+    def setUp(self):
+        StudentSkill.objects.all().delete()
+        GroupMember.objects.all().delete()
+        ProjectRequiredSkill.objects.all().delete()
+        Group.objects.all().delete()
+        Project.objects.all().delete()
+        Skill.objects.all().delete()
+        Student.objects.all().delete()
+
+        self.user = User.objects.create_user(username='tester', password='secret123')
+        self.client.force_login(self.user)
+
+    def _save_student(self, **overrides):
+        data = {
+            'student_number': 'STU-0001',
+            'first_name': 'Jane',
+            'last_name': 'Doe',
+            'email': 'jane@example.com',
+            'course': 'BSIT',
+            'section': '3A',
+        }
+        data.update(overrides)
+        return self.client.post(reverse('students:student_save_ajax'), data)
+
+    def test_create_student_with_year_level(self):
+        response = self._save_student(year_level='2')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['year_level'], 2)
+        self.assertEqual(response.json()['year_level_display'], '2nd Year')
+        self.assertEqual(Student.objects.get().year_level, 2)
+
+    def test_create_student_without_year_level_is_allowed(self):
+        response = self._save_student()
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.json()['year_level'])
+        self.assertIsNone(Student.objects.get().year_level)
+
+    def test_create_student_with_blank_year_level_is_allowed(self):
+        response = self._save_student(year_level='')
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(Student.objects.get().year_level)
+
+    def test_create_student_rejects_out_of_range_year_level(self):
+        for raw in ['0', '5', '-1', '10']:
+            with self.subTest(year_level=raw):
+                response = self._save_student(
+                    student_number='STU-{}'.format(raw.replace('-', 'n')),
+                    year_level=raw,
+                )
+                self.assertEqual(response.status_code, 400)
+                self.assertIn('error', response.json())
+        self.assertEqual(Student.objects.count(), 0)
+
+    def test_create_student_rejects_non_numeric_year_level(self):
+        for raw in ['abc', '2.5', '1e3']:
+            with self.subTest(year_level=raw):
+                response = self._save_student(year_level=raw)
+                self.assertEqual(response.status_code, 400)
+                self.assertIn('error', response.json())
+        self.assertEqual(Student.objects.count(), 0)
+
+    def test_edit_student_year_level(self):
+        student = Student.objects.create(
+            student_number='STU-0001',
+            first_name='Jane',
+            last_name='Doe',
+            email='jane@example.com',
+            course='BSIT',
+            section='3A',
+            year_level=1,
+        )
+        response = self._save_student(
+            student_id=str(student.pk), year_level='4'
+        )
+        self.assertEqual(response.status_code, 200)
+        student.refresh_from_db()
+        self.assertEqual(student.year_level, 4)
+
+    def test_edit_student_can_clear_year_level(self):
+        student = Student.objects.create(
+            student_number='STU-0001',
+            first_name='Jane',
+            last_name='Doe',
+            email='jane@example.com',
+            course='BSIT',
+            section='3A',
+            year_level=3,
+        )
+        response = self._save_student(student_id=str(student.pk), year_level='')
+        self.assertEqual(response.status_code, 200)
+        student.refresh_from_db()
+        self.assertIsNone(student.year_level)
+
+    def test_edit_student_without_year_level_key_preserves_none(self):
+        student = Student.objects.create(
+            student_number='STU-0001',
+            first_name='Jane',
+            last_name='Doe',
+            email='jane@example.com',
+            course='BSIT',
+            section='3A',
+        )
+        response = self._save_student(student_id=str(student.pk))
+        self.assertEqual(response.status_code, 200)
+        student.refresh_from_db()
+        self.assertIsNone(student.year_level)
+
+    def test_student_list_and_get_include_year_level(self):
+        student = Student.objects.create(
+            student_number='STU-0001',
+            first_name='Jane',
+            last_name='Doe',
+            email='jane@example.com',
+            course='BSIT',
+            section='3A',
+            year_level=3,
+        )
+        list_response = self.client.get(reverse('students:student_list_ajax'))
+        self.assertEqual(list_response.status_code, 200)
+        self.assertEqual(list_response.json()['data'][0]['year_level'], 3)
+        self.assertEqual(
+            list_response.json()['data'][0]['year_level_display'], '3rd Year'
+        )
+
+        get_response = self.client.get(
+            reverse('students:student_get_ajax', args=[student.pk])
+        )
+        self.assertEqual(get_response.status_code, 200)
+        self.assertEqual(get_response.json()['year_level'], 3)
+
+    def test_student_search_by_year_level(self):
+        Student.objects.create(
+            student_number='STU-A', first_name='Ann', last_name='Abad',
+            email='ann@example.com', course='BSIT', section='A', year_level=1,
+        )
+        Student.objects.create(
+            student_number='STU-B', first_name='Ben', last_name='Basa',
+            email='ben@example.com', course='BSIT', section='B', year_level=2,
+        )
+
+        first_year = self.client.get(
+            reverse('students:student_list_ajax'), {'q': '1'}
+        )
+        self.assertEqual(first_year.json()['total'], 1)
+        self.assertEqual(first_year.json()['data'][0]['year_level'], 1)
+
+        second_year = self.client.get(
+            reverse('students:student_list_ajax'), {'q': '2'}
+        )
+        self.assertEqual(second_year.json()['total'], 1)
+        self.assertEqual(second_year.json()['data'][0]['year_level'], 2)
+
+    def test_student_form_has_optional_year_level_select(self):
+        response = self.client.get(reverse('students:student_list'))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'name="year_level"')
+        for label in ['1st Year', '2nd Year', '3rd Year', '4th Year']:
+            with self.subTest(label=label):
+                self.assertContains(response, label)

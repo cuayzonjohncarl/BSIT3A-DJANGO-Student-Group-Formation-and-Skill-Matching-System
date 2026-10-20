@@ -1,0 +1,308 @@
+{% extends "theme/base.html" %}
+{% block content %}
+<div class="container-xl">
+  <div class="page-header d-print-none" aria-label="Page header">
+    <div class="container-xl">
+      <div class="row align-items-center">
+        <div class="col">
+          <div class="page-pretitle">Overview</div>
+          <div class="d-flex align-items-center gap-3 flex-wrap d-none d-md-flex">
+            <h2 class="page-title mb-0">Project Required Skills</h2>
+          </div>
+          <h2 class="page-title mb-0 d-md-none">Project Required Skills</h2>
+        </div>
+      </div>
+    </div>
+  </div>
+  <br>
+
+  <div class="d-flex flex-column flex-md-row align-items-start align-items-md-center justify-content-between gap-2 mb-1">
+    <form method="GET" class="w-100" style="max-width: 420px;">
+      <div class="input-group">
+        <span class="input-group-text"><i class="ti ti-search"></i></span>
+        <input type="text" name="q" value="{{ query }}" class="form-control" placeholder="Search by project name or skill...">
+        {% if query %}
+        <a href="{% url 'students:project_skill_list' %}" class="btn btn-outline-secondary">Clear</a>
+        {% endif %}
+        <button type="submit" class="btn btn-primary">Search</button>
+      </div>
+    </form>
+
+    <button type="button" class="btn btn-primary mt-n4" data-bs-toggle="modal" data-bs-target="#projectSkillModal" data-mode="create" {% if not all_projects or not all_skills %}disabled title="Add projects and skills first"{% endif %}>
+      <i class='fas fa-plus-circle me-2'></i> Add Required Skill
+    </button>
+  </div>
+
+  <div class="toast-container position-fixed top-0 end-0 p-3" id="projectSkillToastContainer" aria-live="polite" aria-atomic="true">
+    {% for message in messages %}
+    <div class="toast bg-info-lt" role="status" aria-atomic="true" data-bs-delay="4000" style="--tblr-toast-color: #000;">
+      <div class="d-flex">
+        <div class="toast-body">{{ message }}</div>
+        <button type="button" class="btn-close me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div id="projectSkillAlert" class="alert alert-danger d-none" role="alert"></div>
+
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">
+        Skill Requirements
+        {% if query %}
+        <span class="text-muted fw-normal">— search results for "{{ query }}"</span>
+        {% endif %}
+      </div>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-vcenter table-hover card-table text-nowrap" id="projectSkillTable">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Project</th>
+            <th>Skill</th>
+            <th>Required Level</th>
+            <th class="w-1">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="projectSkillTableBody">
+        {% for requirement in requirements %}
+        <tr data-row-id="{{ requirement.project_skill_id }}">
+            <td class="text-muted">{{ forloop.counter0|add:requirements.start_index }}</td>
+            <td class="fw-semibold">{{ requirement.project.project_name }}</td>
+            <td class="text-muted">{{ requirement.skill.skill_name }}</td>
+            <td><span class="badge bg-green-lt text-green">{{ requirement.required_level }}</span></td>
+            <td>
+              <div class="d-flex gap-1">
+                <button type="button" class="btn btn-ghost-secondary btn-icon btn-sm" data-bs-toggle="modal" data-bs-target="#projectSkillModal" data-mode="edit" data-id="{{ requirement.project_skill_id }}" data-project-id="{{ requirement.project_id }}" data-skill-id="{{ requirement.skill_id }}" data-required-level="{{ requirement.required_level }}" title="Edit">
+                  <i class="fas fa-edit text-primary"></i>
+                </button>
+                <button type="button" class="btn btn-ghost-secondary btn-icon btn-sm" data-bs-toggle="modal" data-bs-target="#deleteProjectSkillModal" data-id="{{ requirement.project_skill_id }}" data-name="{{ requirement.project.project_name }} — {{ requirement.skill.skill_name }}" title="Remove">
+                  <i class="fas fa-trash-alt text-danger"></i>
+                </button>
+              </div>
+            </td>
+        </tr>
+        {% empty %}
+        <tr>
+            <td colspan="5">
+                <div class="empty py-5">
+                    <div class="empty-icon">
+                        <i class="fas fa-check-double fa-2x text-muted"></i>
+                    </div>
+                    <p class="empty-title">No required skills found</p>
+                    <p class="empty-subtitle">Try adjusting your search or add a required skill to a project.</p>
+                    <div class="empty-action">
+                        <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#projectSkillModal" data-mode="create" {% if not all_projects or not all_skills %}disabled title="Add projects and skills first"{% endif %}>
+                            <i class="fas fa-plus-circle me-2"></i> Add Required Skill
+                        </button>
+                    </div>
+                </div>
+            </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if requirements.paginator.num_pages > 1 %}
+    <div class="card-footer d-flex align-items-center">
+      <p class="m-0 text-muted">
+        Showing <span class="fw-medium">{{ requirements.start_index }}</span>
+        to <span class="fw-medium">{{ requirements.end_index }}</span>
+        of <span class="fw-medium">{{ requirements.paginator.count }}</span> requirements
+      </p>
+      <ul class="pagination m-0 ms-auto">
+        {% if requirements.has_previous %}
+        <li class="page-item">
+          <a class="page-link" href="?page={{ requirements.previous_page_number }}{% if query %}&q={{ query }}{% endif %}">
+            <i class="ti ti-chevron-left"></i> prev
+          </a>
+        </li>
+        {% endif %}
+        {% for num in requirements.paginator.page_range %}
+        <li class="page-item {% if requirements.number == num %}active{% endif %}">
+          <a class="page-link" href="?page={{ num }}{% if query %}&q={{ query }}{% endif %}">{{ num }}</a>
+        </li>
+        {% endfor %}
+        {% if requirements.has_next %}
+        <li class="page-item">
+          <a class="page-link" href="?page={{ requirements.next_page_number }}{% if query %}&q={{ query }}{% endif %}">
+            next <i class="ti ti-chevron-right"></i>
+          </a>
+        </li>
+        {% endif %}
+      </ul>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="modal modal-blur fade" id="projectSkillModal" tabindex="-1">
+  <div class="modal-dialog modal-md modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="projectSkillModalTitle">Add Required Skill</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form id="projectSkillForm">
+        {% csrf_token %}
+        <input type="hidden" name="project_skill_id" id="project_skill_id">
+        <div class="modal-body">
+          <div id="projectSkillFormError" class="alert alert-danger d-none"></div>
+          <div class="row g-3">
+            <div class="col-12">
+              <label class="form-label">Project</label>
+              <select name="project_id" id="project_id_select" class="form-select" required>
+                <option value="">Select a project...</option>
+                {% for project in all_projects %}
+                <option value="{{ project.project_id }}">{{ project.project_name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-12">
+              <label class="form-label">Skill</label>
+              <select name="skill_id" id="skill_id_select" class="form-select" required>
+                <option value="">Select a skill...</option>
+                {% for skill in all_skills %}
+                <option value="{{ skill.skill_id }}">{{ skill.skill_name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-12">
+              <label class="form-label">Required Level</label>
+              <input type="number" step="1" min="1" max="5" name="required_level" id="required_level" class="form-control" required>
+              <small class="form-hint">Minimum skill level required for this project: 1 = Beginner, 2 = Basic, 3 = Intermediate, 4 = Advanced, 5 = Expert.</small>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-ghost-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="projectSkillSubmitBtn">Save Requirement</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="modal modal-blur fade" id="deleteProjectSkillModal" tabindex="-1">
+  <div class="modal-dialog modal-sm modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Remove Requirement</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p>Are you sure you want to remove <strong id="deleteProjectSkillName"></strong>?</p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-danger" id="confirmDeleteProjectSkillBtn">Remove</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function() {
+  const modalEl = document.getElementById('projectSkillModal');
+  const deleteModalEl = document.getElementById('deleteProjectSkillModal');
+  const form = document.getElementById('projectSkillForm');
+  const alertBox = document.getElementById('projectSkillAlert');
+  const title = document.getElementById('projectSkillModalTitle');
+  const submitBtn = document.getElementById('projectSkillSubmitBtn');
+  const deleteBtn = document.getElementById('confirmDeleteProjectSkillBtn');
+  const deleteName = document.getElementById('deleteProjectSkillName');
+  let currentId = null;
+
+  document.querySelectorAll('#projectSkillToastContainer .toast').forEach(function(toastEl) {
+    bootstrap.Toast.getOrCreateInstance(toastEl).show();
+  });
+
+  function resetForm() {
+    form.reset();
+    document.getElementById('project_skill_id').value = '';
+    title.textContent = 'Add Required Skill';
+    submitBtn.textContent = 'Save Requirement';
+    alertBox.classList.add('d-none');
+    alertBox.textContent = '';
+    currentId = null;
+  }
+
+  modalEl.addEventListener('show.bs.modal', function(event) {
+    const button = event.relatedTarget;
+    if (!button) {
+      resetForm();
+      return;
+    }
+
+    const mode = button.getAttribute('data-mode');
+    if (mode === 'edit') {
+      const id = button.getAttribute('data-id');
+      title.textContent = 'Edit Required Skill';
+      submitBtn.textContent = 'Update Requirement';
+      currentId = id;
+      document.getElementById('project_skill_id').value = id;
+      document.getElementById('project_id_select').value = button.getAttribute('data-project-id');
+      document.getElementById('skill_id_select').value = button.getAttribute('data-skill-id');
+      document.getElementById('required_level').value = button.getAttribute('data-required-level');
+    } else {
+      resetForm();
+    }
+  });
+
+  deleteModalEl.addEventListener('show.bs.modal', function(event) {
+    const button = event.relatedTarget;
+    if (button) {
+      currentId = button.getAttribute('data-id');
+      deleteName.textContent = button.getAttribute('data-name');
+    }
+  });
+
+  form.addEventListener('submit', function(e) {
+    e.preventDefault();
+    const formData = new FormData(form);
+
+    fetch('{% url "students:project_skill_save_ajax" %}', {
+      method: 'POST',
+      headers: {'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value},
+      body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+      if (data.error) {
+        alertBox.textContent = data.error;
+        alertBox.classList.remove('d-none');
+        return;
+      }
+      window.location.reload();
+    })
+    .catch(() => {
+      alertBox.textContent = 'Something went wrong.';
+      alertBox.classList.remove('d-none');
+    });
+  });
+
+  deleteBtn.addEventListener('click', function() {
+    if (!currentId) return;
+    fetch('/students/project-skills/ajax/delete/' + currentId + '/', {
+      method: 'POST',
+      headers: {'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value}
+    })
+    .then(response => response.json())
+    .then(data => {
+      if (data.status === 'deleted') {
+        window.location.reload();
+      } else if (data.error) {
+        alertBox.textContent = data.error;
+        alertBox.classList.remove('d-none');
+        bootstrap.Modal.getInstance(deleteModalEl).hide();
+      }
+    });
+  });
+})();
+</script>
+{% endblock %}

@@ -21,4 +21,16 @@ urlpatterns = [
     path('student-skills/ajax/get/<int:pk>/', views.student_skill_get_ajax, name='student_skill_get_ajax'),
     path('student-skills/ajax/save/', views.student_skill_save_ajax, name='student_skill_save_ajax'),
     path('student-skills/ajax/delete/<int:pk>/', views.student_skill_delete_ajax, name='student_skill_delete_ajax'),
+
+    path('projects/', views.project_list_page, name='project_list'),
+    path('projects/ajax/list/', views.project_list_ajax, name='project_list_ajax'),
+    path('projects/ajax/get/<int:pk>/', views.project_get_ajax, name='project_get_ajax'),
+    path('projects/ajax/save/', views.project_save_ajax, name='project_save_ajax'),
+    path('projects/ajax/delete/<int:pk>/', views.project_delete_ajax, name='project_delete_ajax'),
+
+    path('project-skills/', views.project_skill_list_page, name='project_skill_list'),
+    path('project-skills/ajax/list/', views.project_skill_list_ajax, name='project_skill_list_ajax'),
+    path('project-skills/ajax/get/<int:pk>/', views.project_skill_get_ajax, name='project_skill_get_ajax'),
+    path('project-skills/ajax/save/', views.project_skill_save_ajax, name='project_skill_save_ajax'),
+    path('project-skills/ajax/delete/<int:pk>/', views.project_skill_delete_ajax, name='project_skill_delete_ajax'),
 ]

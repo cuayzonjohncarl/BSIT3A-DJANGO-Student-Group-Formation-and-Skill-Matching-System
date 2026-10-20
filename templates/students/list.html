@@ -20,7 +20,7 @@
     <form method="GET" class="w-100" style="max-width: 420px;">
       <div class="input-group">
         <span class="input-group-text"><i class="ti ti-search"></i></span>
-        <input type="text" name="q" value="{{ query }}" class="form-control" placeholder="Search by student no., name, course, or section...">
+        <input type="text" name="q" value="{{ query }}" class="form-control" placeholder="Search by student no., name, course, section, or year level...">
         {% if query %}
         <a href="{% url 'students:student_list' %}" class="btn btn-outline-secondary">Clear</a>
         {% endif %}
@@ -65,6 +65,7 @@
             <th>Email</th>
             <th>Course</th>
             <th>Section</th>
+            <th>Year Level</th>
             <th class="w-1">Actions</th>
           </tr>
         </thead>
@@ -77,9 +78,10 @@
             <td class="text-muted">{{ student.email|default:"—" }}</td>
             <td class="text-muted">{{ student.course }}</td>
             <td class="text-muted">{{ student.section }}</td>
+            <td class="text-muted">{{ student.get_year_level_display|default:"—" }}</td>
             <td>
               <div class="d-flex gap-1">
-                <button type="button" class="btn btn-ghost-secondary btn-icon btn-sm" data-bs-toggle="modal" data-bs-target="#studentModal" data-mode="edit" data-id="{{ student.student_id }}" data-student-number="{{ student.student_number }}" data-first-name="{{ student.first_name }}" data-last-name="{{ student.last_name }}" data-email="{{ student.email }}" data-course="{{ student.course }}" data-section="{{ student.section }}" title="Edit">
+                <button type="button" class="btn btn-ghost-secondary btn-icon btn-sm" data-bs-toggle="modal" data-bs-target="#studentModal" data-mode="edit" data-id="{{ student.student_id }}" data-student-number="{{ student.student_number }}" data-first-name="{{ student.first_name }}" data-last-name="{{ student.last_name }}" data-email="{{ student.email }}" data-course="{{ student.course }}" data-section="{{ student.section }}" data-year-level="{{ student.year_level|default_if_none:'' }}" title="Edit">
                   <i class="fas fa-edit text-primary"></i>
                 </button>
                 <button type="button" class="btn btn-ghost-secondary btn-icon btn-sm" data-bs-toggle="modal" data-bs-target="#deleteStudentModal" data-id="{{ student.student_id }}" data-name="{{ student.first_name }} {{ student.last_name }}" title="Delete">
@@ -90,7 +92,7 @@
         </tr>
         {% empty %}
         <tr>
-            <td colspan="7">
+            <td colspan="8">
                 <div class="empty py-5">
                     <div class="empty-icon">
                         <i class="fas fa-user-graduate fa-2x text-muted"></i>
@@ -180,6 +182,16 @@
               <label class="form-label">Section</label>
               <input type="text" name="section" id="student_section" class="form-control" required>
             </div>
+            <div class="col-md-6">
+              <label class="form-label">Year Level</label>
+              <select name="year_level" id="student_year_level" class="form-select">
+                <option value="">— None —</option>
+                <option value="1">1st Year</option>
+                <option value="2">2nd Year</option>
+                <option value="3">3rd Year</option>
+                <option value="4">4th Year</option>
+              </select>
+            </div>
           </div>
         </div>
         <div class="modal-footer">
@@ -257,6 +269,7 @@
       document.getElementById('student_email').value = button.getAttribute('data-email');
       document.getElementById('student_course').value = button.getAttribute('data-course');
       document.getElementById('student_section').value = button.getAttribute('data-section');
+      document.getElementById('student_year_level').value = button.getAttribute('data-year-level') || '';
     } else {
       resetForm();
     }

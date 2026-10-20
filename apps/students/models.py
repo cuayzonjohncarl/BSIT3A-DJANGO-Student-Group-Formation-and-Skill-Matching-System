@@ -8,6 +8,14 @@ or drops the table, and no migration is required.
 from django.db import models
 
 
+YEAR_LEVEL_CHOICES = (
+    (1, '1st Year'),
+    (2, '2nd Year'),
+    (3, '3rd Year'),
+    (4, '4th Year'),
+)
+
+
 class Student(models.Model):
     student_id = models.AutoField(primary_key=True)
     student_number = models.CharField(max_length=50)
@@ -16,6 +24,11 @@ class Student(models.Model):
     email = models.EmailField(max_length=255)
     course = models.CharField(max_length=100)
     section = models.CharField(max_length=50)
+    year_level = models.PositiveSmallIntegerField(
+        choices=YEAR_LEVEL_CHOICES,
+        null=True,
+        blank=True,
+    )
 
     class Meta:
         managed = False
