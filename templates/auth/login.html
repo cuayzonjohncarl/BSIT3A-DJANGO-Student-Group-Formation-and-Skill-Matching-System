@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta http-equiv="X-UA-Compatible" content="ie=edge" />
   <title>
-    Sign in - Azuelo Technology
+    Sign in - Student Group Formation and Skill Matching System
   </title>
   <link href="{% static 'css/tabler.css' %}" rel="stylesheet" />
   <link href="{% static 'css/tabler-themes.css' %}" rel="stylesheet" />
@@ -19,13 +19,21 @@
   <div class="page page-center">
     <div class="container container-tight py-4">
 
+      <div class="text-center mb-3">
+        <div class="mb-2">
+          <span class="avatar avatar-lg bg-primary text-white shadow-sm rounded-circle">
+            <i class="fa-solid fa-shield-halved fa-lg"></i>
+          </span>
+        </div>
+        <div class="fw-bold fs-2 text-white">
+          Student Group Formation <span class="text-primary">System</span>
+        </div>
+        <div class="text-muted small">Skill Matching &amp; Team Compatibility Platform</div>
+      </div>
+
      <div class="card card-md">
       <div class="card-body">
-
-        <center class="mt-n4">
-        <i class='far fa-calendar' style='font-size:40px'></i>
-        </center>
-        <h2 class="h3 text-center mb-4">Sign in to start your session</h2>
+        <h2 class="h3 text-center mb-4">Sign in to your account</h2>
 
         <form method="post">
           {% csrf_token %}
@@ -58,10 +66,10 @@
      </div>
    </div>
  </div>
- <!-- <div class="text-center text-secondary mt-n1">
+ <div class="text-center text-secondary mt-n1">
   Don't have an account?
   <a href="{% url 'register' %}" class="text-primary fw-bold">Register</a>
- </div> -->
+ </div>
 </div>
 
 {% include 'theme/settings.html' %}

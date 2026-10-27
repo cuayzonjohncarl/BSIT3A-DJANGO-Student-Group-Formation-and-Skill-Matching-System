@@ -15,6 +15,8 @@ from .models import (
     StudentSkill,
     Project,
     ProjectRequiredSkill,
+    Group,
+    GroupMember,
 )
 
 
@@ -939,3 +941,366 @@ def project_skill_delete_ajax(request, pk):
     requirement.delete()
     messages.success(request, f'Requirement "{label}" has been removed successfully.')
     return JsonResponse({'status': 'deleted'})
+
+
+# ---------------------------------------------------------------------------
+# Group Formation, Membership & Skill Matching / Gap Analysis Engine
+# ---------------------------------------------------------------------------
+
+MAX_GROUP_MEMBERS = 5
+
+
+def _analyze_group_skills(group):
+    """Calculate compatibility score, satisfied skills, and skill gaps for a group."""
+    required_skills = list(
+        ProjectRequiredSkill.objects.filter(project_id=group.project_id)
+        .select_related('skill')
+        .order_by('skill__skill_name')
+    )
+    memberships = list(
+        GroupMember.objects.filter(group_id=group.group_id)
+        .select_related('student')
+        .order_by('student__last_name', 'student__first_name')
+    )
+    member_students = [m.student for m in memberships]
+
+    # Map student skills in this group: {skill_id: [StudentSkill, ...]}
+    skill_map = {}
+    if member_students:
+        student_skills = StudentSkill.objects.filter(
+            student__in=member_students
+        ).select_related('student', 'skill')
+        for ss in student_skills:
+            if ss.skill_id not in skill_map:
+                skill_map[ss.skill_id] = []
+            skill_map[ss.skill_id].append(ss)
+
+    details = []
+    satisfied_count = 0
+    deficient_count = 0
+    missing_count = 0
+
+    for req in required_skills:
+        req_skill = req.skill
+        assigned_in_group = skill_map.get(req.skill_id, [])
+        if assigned_in_group:
+            best_assignment = max(assigned_in_group, key=lambda x: x.proficiency_level)
+            best_level = best_assignment.proficiency_level
+            covering_student = f"{best_assignment.student.first_name} {best_assignment.student.last_name}"
+            if best_level >= req.required_level:
+                status = 'satisfied'
+                gap = 0
+                satisfied_count += 1
+            else:
+                status = 'deficient'
+                gap = req.required_level - best_level
+                deficient_count += 1
+        else:
+            best_level = 0
+            covering_student = None
+            status = 'missing'
+            gap = req.required_level
+            missing_count += 1
+
+        details.append({
+            'skill_id': req.skill_id,
+            'skill_name': req_skill.skill_name,
+            'required_level': req.required_level,
+            'best_level': best_level,
+            'covering_student': covering_student,
+            'status': status,
+            'gap': gap,
+        })
+
+    total_required = len(required_skills)
+    if total_required > 0:
+        match_percentage = round((satisfied_count / total_required) * 100)
+    else:
+        match_percentage = 100 if len(member_students) > 0 else 0
+
+    return {
+        'total_required': total_required,
+        'satisfied_count': satisfied_count,
+        'deficient_count': deficient_count,
+        'missing_count': missing_count,
+        'gap_count': deficient_count + missing_count,
+        'match_percentage': match_percentage,
+        'details': details,
+        'members': [
+            {
+                'member_id': m.group_member_id,
+                'student_id': m.student_id,
+                'student_number': m.student.student_number,
+                'name': f"{m.student.last_name}, {m.student.first_name}",
+                'course': m.student.course,
+                'section': m.student.section,
+            }
+            for m in memberships
+        ],
+    }
+
+
+def _group_data(group, include_analysis=True):
+    """Return JSON-serializable representation of a group with its analysis."""
+    data = {
+        'group_id': group.group_id,
+        'group_name': group.group_name,
+        'project_id': group.project_id,
+        'project_name': group.project.project_name,
+        'members_count': group.members.count(),
+    }
+    if include_analysis:
+        data['analysis'] = _analyze_group_skills(group)
+    return data
+
+
+@login_required(login_url='login')
+def group_list_page(request):
+    """Render the searchable group management page with compatibility cards."""
+    query = request.GET.get('q', '').strip()
+    project_filter = request.GET.get('project', '').strip()
+
+    groups_list = Group.objects.select_related('project').prefetch_related('members__student')
+
+    if query:
+        groups_list = groups_list.filter(
+            Q(group_name__icontains=query) |
+            Q(project__project_name__icontains=query)
+        )
+
+    if project_filter and project_filter.isdigit():
+        groups_list = groups_list.filter(project_id=int(project_filter))
+
+    paginator = Paginator(groups_list, 9)
+    page_number = request.GET.get('page', 1)
+    page_obj = paginator.get_page(page_number)
+
+    # Attach analysis to each group on the current page
+    analyzed_groups = []
+    for g in page_obj.object_list:
+        analysis = _analyze_group_skills(g)
+        analyzed_groups.append({
+            'group': g,
+            'analysis': analysis,
+        })
+
+    all_projects = Project.objects.all().order_by('project_name')
+
+    return render(request, 'students/groups.html', {
+        'page_obj': page_obj,
+        'analyzed_groups': analyzed_groups,
+        'query': query,
+        'project_filter': project_filter,
+        'all_projects': all_projects,
+    })
+
+
+@login_required(login_url='login')
+def group_list_ajax(request):
+    """Return filtered group records as paginated JSON."""
+    query = request.GET.get('q', '').strip()
+    project_filter = request.GET.get('project', '').strip()
+
+    groups_list = Group.objects.select_related('project')
+
+    if query:
+        groups_list = groups_list.filter(
+            Q(group_name__icontains=query) |
+            Q(project__project_name__icontains=query)
+        )
+
+    if project_filter and project_filter.isdigit():
+        groups_list = groups_list.filter(project_id=int(project_filter))
+
+    paginator = Paginator(groups_list, 10)
+    page_number = request.GET.get('page', 1)
+    groups = paginator.get_page(page_number)
+    data = [_group_data(g) for g in groups.object_list]
+
+    return JsonResponse({
+        'data': data,
+        'has_next': groups.has_next(),
+        'has_prev': groups.has_previous(),
+        'page': groups.number,
+        'pages': groups.paginator.num_pages,
+        'total': groups.paginator.count,
+    })
+
+
+@login_required(login_url='login')
+def group_get_ajax(request, pk):
+    """Return a single group with full roster and skill analysis as JSON."""
+    group = get_object_or_404(Group.objects.select_related('project'), pk=pk)
+    return JsonResponse(_group_data(group, include_analysis=True))
+
+
+@login_required(login_url='login')
+@require_POST
+def group_save_ajax(request):
+    """Validate and create or update a project group as JSON."""
+    group_id = request.POST.get('group_id')
+
+    if group_id:
+        group_pk = _parse_int(group_id)
+        if group_pk is None:
+            return JsonResponse({'error': 'Invalid group reference.'}, status=400)
+        group = get_object_or_404(Group, pk=group_pk)
+        is_update = True
+    else:
+        group = Group()
+        is_update = False
+
+    group_name = request.POST.get('group_name', '').strip()
+    project_id = request.POST.get('project_id', '').strip()
+
+    if not group_name:
+        return JsonResponse({'error': 'Group name is required.'}, status=400)
+
+    if not project_id:
+        return JsonResponse({'error': 'Please select a project.'}, status=400)
+
+    project_pk = _parse_int(project_id)
+    if project_pk is None:
+        return JsonResponse({'error': 'Invalid project reference.'}, status=400)
+
+    project = get_object_or_404(Project, pk=project_pk)
+
+    # Prevent duplicate group names under the same project
+    duplicates = Group.objects.filter(project=project, group_name__iexact=group_name)
+    if group.pk:
+        duplicates = duplicates.exclude(pk=group.pk)
+    if duplicates.exists():
+        return JsonResponse(
+            {'error': 'A group with that name already exists for this project.'},
+            status=400
+        )
+
+    group.group_name = group_name
+    group.project = project
+
+    try:
+        group.save()
+    except IntegrityError:
+        return JsonResponse({'error': 'Could not save group due to a conflict.'}, status=400)
+
+    messages.success(
+        request,
+        f'Group "{group.group_name}" has been {"updated" if is_update else "created"} successfully.'
+    )
+
+    payload = {'status': 'success'}
+    payload.update(_group_data(group, include_analysis=True))
+    return JsonResponse(payload)
+
+
+@login_required(login_url='login')
+@require_POST
+def group_delete_ajax(request, pk):
+    """Delete a group and its member associations."""
+    group = get_object_or_404(Group, pk=pk)
+    group_name = group.group_name
+    # Delete child members first
+    GroupMember.objects.filter(group=group).delete()
+    group.delete()
+    messages.success(request, f'Group "{group_name}" has been deleted successfully.')
+    return JsonResponse({'status': 'deleted'})
+
+
+@login_required(login_url='login')
+def group_unassigned_students_ajax(request, group_pk):
+    """Return students not yet assigned to ANY group for this group's project."""
+    group = get_object_or_404(Group.objects.select_related('project'), pk=group_pk)
+
+    # Find student IDs already assigned to any group under this project
+    assigned_student_ids = GroupMember.objects.filter(
+        group__project=group.project
+    ).values_list('student_id', flat=True)
+
+    available_students = Student.objects.exclude(
+        student_id__in=assigned_student_ids
+    ).order_by('last_name', 'first_name')
+
+    data = [
+        {
+            'student_id': s.student_id,
+            'student_number': s.student_number,
+            'name': f"{s.last_name}, {s.first_name}",
+            'course': s.course,
+            'section': s.section,
+        }
+        for s in available_students
+    ]
+
+    return JsonResponse({'students': data})
+
+
+@login_required(login_url='login')
+@require_POST
+def group_member_add_ajax(request, group_pk):
+    """Add a student to a group with strict validation."""
+    group = get_object_or_404(Group.objects.select_related('project'), pk=group_pk)
+
+    student_id = request.POST.get('student_id', '').strip()
+    if not student_id:
+        return JsonResponse({'error': 'Please select a student to add.'}, status=400)
+
+    student_pk = _parse_int(student_id)
+    if student_pk is None:
+        return JsonResponse({'error': 'Invalid student reference.'}, status=400)
+
+    student = get_object_or_404(Student, pk=student_pk)
+
+    # Check maximum group size
+    current_count = GroupMember.objects.filter(group=group).count()
+    if current_count >= MAX_GROUP_MEMBERS:
+        return JsonResponse(
+            {'error': f'This group has reached the maximum capacity of {MAX_GROUP_MEMBERS} members.'},
+            status=400
+        )
+
+    # Check if student is already in this group
+    if GroupMember.objects.filter(group=group, student=student).exists():
+        return JsonResponse({'error': 'This student is already in this group.'}, status=400)
+
+    # Check if student is already in ANOTHER group for this same project
+    existing_in_project = GroupMember.objects.filter(
+        group__project=group.project, student=student
+    ).select_related('group').first()
+
+    if existing_in_project:
+        return JsonResponse(
+            {'error': f'Student is already a member of "{existing_in_project.group.group_name}" for this project.'},
+            status=400
+        )
+
+    membership = GroupMember.objects.create(group=group, student=student)
+
+    messages.success(
+        request,
+        f'Added "{student.first_name} {student.last_name}" to "{group.group_name}".'
+    )
+
+    return JsonResponse({
+        'status': 'success',
+        'membership_id': membership.group_member_id,
+        'analysis': _analyze_group_skills(group),
+    })
+
+
+@login_required(login_url='login')
+@require_POST
+def group_member_remove_ajax(request, group_pk, member_pk):
+    """Remove a student member from a group."""
+    group = get_object_or_404(Group, pk=group_pk)
+    membership = get_object_or_404(GroupMember.objects.select_related('student'), pk=member_pk, group=group)
+
+    student_name = f"{membership.student.first_name} {membership.student.last_name}"
+    membership.delete()
+
+    messages.success(request, f'Removed "{student_name}" from "{group.group_name}".')
+
+    return JsonResponse({
+        'status': 'removed',
+        'analysis': _analyze_group_skills(group),
+    })
+

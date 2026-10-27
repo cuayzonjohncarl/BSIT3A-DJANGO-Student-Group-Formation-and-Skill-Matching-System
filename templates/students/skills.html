@@ -70,7 +70,18 @@
         <tr data-row-id="{{ skill.skill_id }}">
             <td class="text-muted">{{ forloop.counter0|add:skills.start_index }}</td>
             <td class="fw-semibold">{{ skill.skill_name }}</td>
-            <td class="text-muted">{{ skill.description|default:"—"|truncatechars:80 }}</td>
+            <td class="text-muted">
+              {% if skill.description %}
+              <div class="skill-desc-cell">
+                <button type="button" class="btn btn-link text-start p-0 skill-desc-preview-btn" data-description="{{ skill.description|escape }}" title="Click to view full description">
+                  <div class="skill-desc-preview">{{ skill.description }}</div>
+                </button>
+                <button type="button" class="btn btn-link btn-sm p-0 skill-desc-view" data-description="{{ skill.description|escape }}">View description</button>
+              </div>
+              {% else %}
+              —
+              {% endif %}
+            </td>
             <td>
               <div class="d-flex gap-1">
                 <button type="button" class="btn btn-ghost-secondary btn-icon btn-sm" data-bs-toggle="modal" data-bs-target="#skillModal" data-mode="edit" data-id="{{ skill.skill_id }}" data-skill-name="{{ skill.skill_name }}" data-description="{{ skill.description|default_if_none:'' }}" title="Edit">
@@ -186,6 +197,64 @@
     </div>
   </div>
 </div>
+
+<div class="modal modal-blur fade" id="viewSkillDescriptionModal" tabindex="-1">
+  <div class="modal-dialog modal-md modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Skill Description</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div id="viewSkillDescriptionContent" class="text-break" style="white-space: pre-wrap; word-break: break-word;"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+  #skillTable td:nth-child(2),
+  #skillTable th:nth-child(2),
+  #skillTable td:nth-child(3),
+  #skillTable th:nth-child(3) {
+    white-space: normal !important;
+    word-break: break-word;
+  }
+  .skill-desc-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.25rem;
+    max-width: 420px;
+  }
+  .skill-desc-preview-btn {
+    text-decoration: none;
+    color: inherit;
+    width: 100%;
+    text-align: left;
+  }
+  .skill-desc-preview-btn:hover .skill-desc-preview,
+  .skill-desc-preview-btn:focus .skill-desc-preview {
+    color: var(--tblr-primary);
+  }
+  .skill-desc-preview {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: inherit;
+    word-break: break-word;
+  }
+  @media (max-width: 576px) {
+    .skill-desc-cell {
+      max-width: 260px;
+    }
+  }
+</style>
 {% endblock %}
 
 {% block extra_js %}
@@ -283,6 +352,34 @@
         alertBox.classList.remove('d-none');
         bootstrap.Modal.getInstance(deleteModalEl).hide();
       }
+    });
+  });
+
+  const viewDescModalEl = document.getElementById('viewSkillDescriptionModal');
+  const viewDescContent = document.getElementById('viewSkillDescriptionContent');
+  function openViewDescription(desc) {
+    if (viewDescContent) {
+      viewDescContent.textContent = desc || '';
+    }
+    if (viewDescModalEl && window.bootstrap) {
+      const modal = bootstrap.Modal.getOrCreateInstance(viewDescModalEl);
+      modal.show();
+    }
+  }
+
+  document.querySelectorAll('.skill-desc-view').forEach(function(btn) {
+    btn.addEventListener('click', function(e) {
+      e.preventDefault();
+      const desc = btn.getAttribute('data-description') || '';
+      openViewDescription(desc);
+    });
+  });
+
+  document.querySelectorAll('.skill-desc-preview-btn').forEach(function(btn) {
+    btn.addEventListener('click', function(e) {
+      e.preventDefault();
+      const desc = btn.getAttribute('data-description') || '';
+      openViewDescription(desc);
     });
   });
 })();

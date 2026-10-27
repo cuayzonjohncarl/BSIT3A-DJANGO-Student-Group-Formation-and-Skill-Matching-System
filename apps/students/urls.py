@@ -33,4 +33,14 @@ urlpatterns = [
     path('project-skills/ajax/get/<int:pk>/', views.project_skill_get_ajax, name='project_skill_get_ajax'),
     path('project-skills/ajax/save/', views.project_skill_save_ajax, name='project_skill_save_ajax'),
     path('project-skills/ajax/delete/<int:pk>/', views.project_skill_delete_ajax, name='project_skill_delete_ajax'),
+
+    path('groups/', views.group_list_page, name='group_list'),
+    path('groups/ajax/list/', views.group_list_ajax, name='group_list_ajax'),
+    path('groups/ajax/get/<int:pk>/', views.group_get_ajax, name='group_get_ajax'),
+    path('groups/ajax/save/', views.group_save_ajax, name='group_save_ajax'),
+    path('groups/ajax/delete/<int:pk>/', views.group_delete_ajax, name='group_delete_ajax'),
+    path('groups/ajax/<int:group_pk>/unassigned-students/', views.group_unassigned_students_ajax, name='group_unassigned_students_ajax'),
+    path('groups/ajax/<int:group_pk>/members/add/', views.group_member_add_ajax, name='group_member_add_ajax'),
+    path('groups/ajax/<int:group_pk>/members/remove/<int:member_pk>/', views.group_member_remove_ajax, name='group_member_remove_ajax'),
 ]
+

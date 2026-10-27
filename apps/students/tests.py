@@ -1069,3 +1069,130 @@ class StudentYearLevelCrudTests(UnmanagedTablesMixin, TransactionTestCase):
         for label in ['1st Year', '2nd Year', '3rd Year', '4th Year']:
             with self.subTest(label=label):
                 self.assertContains(response, label)
+
+
+@skipUnless(
+    connection.vendor == 'sqlite',
+    'DB-backed Stage 4 tests run only with mysite.test_settings (SQLite).',
+)
+class Stage4GroupAndMatchingTests(UnmanagedTablesMixin, TransactionTestCase):
+    """Exercise Group Formation, Member Roster, and Skill Matching/Gap Analysis."""
+
+    def setUp(self):
+        super().setUp()
+        self.user = User.objects.create_user(username='tester4', password='password123')
+        self.client.force_login(self.user)
+
+        self.project = Project.objects.create(
+            project_name='Barangay Information System',
+            description='Digitize resident records and services.'
+        )
+        self.skill_backend = Skill.objects.create(
+            skill_name='Backend Web Development',
+            description='Python/Django server development.'
+        )
+        self.skill_db = Skill.objects.create(
+            skill_name='Database Design & Management',
+            description='Relational schema design and queries.'
+        )
+
+        # Set Project Requirements
+        ProjectRequiredSkill.objects.create(
+            project=self.project, skill=self.skill_backend, required_level=3
+        )
+        ProjectRequiredSkill.objects.create(
+            project=self.project, skill=self.skill_db, required_level=3
+        )
+
+        # Create Students
+        self.student1 = Student.objects.create(
+            student_number='2024-001', first_name='John Carl', last_name='Cuayzon',
+            email='johncarl@example.com', course='BSIT', section='3A', year_level=3
+        )
+        self.student2 = Student.objects.create(
+            student_number='2024-002', first_name='Ryan', last_name='Balinas',
+            email='ryan@example.com', course='BSIT', section='3A', year_level=3
+        )
+
+        # Assign Skills
+        StudentSkill.objects.create(
+            student=self.student1, skill=self.skill_backend, proficiency_level=4
+        )
+        StudentSkill.objects.create(
+            student=self.student2, skill=self.skill_db, proficiency_level=2
+        )
+
+    def test_group_create_and_duplicate_prevention(self):
+        # Create group
+        resp = self.client.post(reverse('students:group_save_ajax'), {
+            'project_id': self.project.project_id,
+            'group_name': 'Team Alpha',
+        })
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()['status'], 'success')
+        self.assertTrue(Group.objects.filter(group_name='Team Alpha').exists())
+
+        # Attempt duplicate name under same project
+        dup_resp = self.client.post(reverse('students:group_save_ajax'), {
+            'project_id': self.project.project_id,
+            'group_name': 'Team Alpha',
+        })
+        self.assertEqual(dup_resp.status_code, 400)
+        self.assertIn('already exists', dup_resp.json()['error'])
+
+    def test_member_assignment_and_skill_gap_analysis(self):
+        group = Group.objects.create(project=self.project, group_name='CyberSquad')
+
+        # Add Student 1 (has Backend Level 4 vs req 3)
+        add_resp = self.client.post(
+            reverse('students:group_member_add_ajax', kwargs={'group_pk': group.group_id}),
+            {'student_id': self.student1.student_id}
+        )
+        self.assertEqual(add_resp.status_code, 200)
+        analysis = add_resp.json()['analysis']
+
+        # 1 of 2 required skills satisfied -> 50% match
+        self.assertEqual(analysis['match_percentage'], 50)
+        self.assertEqual(analysis['satisfied_count'], 1)
+        self.assertEqual(analysis['missing_count'], 1)
+
+        # Add Student 2 (has Database Level 2 vs req 3)
+        add2_resp = self.client.post(
+            reverse('students:group_member_add_ajax', kwargs={'group_pk': group.group_id}),
+            {'student_id': self.student2.student_id}
+        )
+        self.assertEqual(add2_resp.status_code, 200)
+        analysis2 = add2_resp.json()['analysis']
+
+        # Still 50% because Student 2 is deficient (level 2 < req 3)
+        self.assertEqual(analysis2['match_percentage'], 50)
+        self.assertEqual(analysis2['deficient_count'], 1)
+
+        # Upgrade Student 2 proficiency to 3
+        ss = StudentSkill.objects.get(student=self.student2, skill=self.skill_db)
+        ss.proficiency_level = 3
+        ss.save()
+
+        # Re-fetch analysis
+        get_resp = self.client.get(reverse('students:group_get_ajax', kwargs={'pk': group.group_id}))
+        final_analysis = get_resp.json()['analysis']
+        self.assertEqual(final_analysis['match_percentage'], 100)
+        self.assertEqual(final_analysis['gap_count'], 0)
+
+    def test_prevent_student_in_multiple_groups_for_same_project(self):
+        group_a = Group.objects.create(project=self.project, group_name='Team A')
+        group_b = Group.objects.create(project=self.project, group_name='Team B')
+
+        # Add student1 to Group A
+        self.client.post(
+            reverse('students:group_member_add_ajax', kwargs={'group_pk': group_a.group_id}),
+            {'student_id': self.student1.student_id}
+        )
+
+        # Attempt to add student1 to Group B (same project)
+        conflict_resp = self.client.post(
+            reverse('students:group_member_add_ajax', kwargs={'group_pk': group_b.group_id}),
+            {'student_id': self.student1.student_id}
+        )
+        self.assertEqual(conflict_resp.status_code, 400)
+        self.assertIn('already a member', conflict_resp.json()['error'])

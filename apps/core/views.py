@@ -140,7 +140,29 @@ def logout_view(request):
 
 @login_required(login_url='login')
 def home(request):
-    return render(request, 'home.html')
+    from apps.students.models import Student, Skill, Project, Group
+    from apps.students.views import _analyze_group_skills
+
+    total_students = Student.objects.count()
+    total_skills = Skill.objects.count()
+    total_projects = Project.objects.count()
+    total_groups = Group.objects.count()
+
+    recent_groups = list(Group.objects.select_related('project')[:6])
+    analyzed_recent = []
+    for g in recent_groups:
+        analyzed_recent.append({
+            'group': g,
+            'analysis': _analyze_group_skills(g),
+        })
+
+    return render(request, 'home.html', {
+        'total_students': total_students,
+        'total_skills': total_skills,
+        'total_projects': total_projects,
+        'total_groups': total_groups,
+        'analyzed_recent': analyzed_recent,
+    })
 
 
 @require_http_methods(['GET', 'POST'])

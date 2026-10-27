@@ -95,6 +95,15 @@
           </a>
         </li>
 
+        <li class="nav-item">
+          <a class="nav-link {% if request.resolver_match.url_name == 'group_list' %}active{% endif %}" href="{% url 'students:group_list' %}">
+            <span class="nav-link-icon d-md-none d-lg-inline-block">
+              <i class="nav-icon fas fa-users-cog"></i>
+            </span>
+            <span class="nav-link-title">Groups & Matching</span>
+          </a>
+        </li>
+
         {% if user.is_authenticated %}
         <li class="nav-item d-lg-none">
           <a class="nav-link" href="{% url 'logout' %}">
