@@ -42,5 +42,5 @@ urlpatterns = [
     path('groups/ajax/<int:group_pk>/unassigned-students/', views.group_unassigned_students_ajax, name='group_unassigned_students_ajax'),
     path('groups/ajax/<int:group_pk>/members/add/', views.group_member_add_ajax, name='group_member_add_ajax'),
     path('groups/ajax/<int:group_pk>/members/remove/<int:member_pk>/', views.group_member_remove_ajax, name='group_member_remove_ajax'),
+    path('groups/ajax/<int:group_pk>/recommendations/', views.group_recommendations_ajax, name='group_recommendations_ajax'),
 ]
-

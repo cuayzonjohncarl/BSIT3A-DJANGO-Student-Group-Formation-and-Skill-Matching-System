@@ -1080,6 +1080,15 @@ class Stage4GroupAndMatchingTests(UnmanagedTablesMixin, TransactionTestCase):
 
     def setUp(self):
         super().setUp()
+        # Clear unmanaged tables for isolation
+        GroupMember.objects.all().delete()
+        ProjectRequiredSkill.objects.all().delete()
+        StudentSkill.objects.all().delete()
+        Group.objects.all().delete()
+        Project.objects.all().delete()
+        Skill.objects.all().delete()
+        Student.objects.all().delete()
+
         self.user = User.objects.create_user(username='tester4', password='password123')
         self.client.force_login(self.user)
 
@@ -1121,6 +1130,7 @@ class Stage4GroupAndMatchingTests(UnmanagedTablesMixin, TransactionTestCase):
         StudentSkill.objects.create(
             student=self.student2, skill=self.skill_db, proficiency_level=2
         )
+
 
     def test_group_create_and_duplicate_prevention(self):
         # Create group
@@ -1195,4 +1205,60 @@ class Stage4GroupAndMatchingTests(UnmanagedTablesMixin, TransactionTestCase):
             {'student_id': self.student1.student_id}
         )
         self.assertEqual(conflict_resp.status_code, 400)
-        self.assertIn('already a member', conflict_resp.json()['error'])
+        self.assertIn('already a member', conflict_resp.json()['error'])
+
+    def test_group_recommendations_exclude_assigned_and_score_by_coverage(self):
+        group = Group.objects.create(project=self.project, group_name='Team Rec')
+        # student1 has backend level 4 (meets req 3), student2 has db level 2 (< req 3)
+        resp = self.client.get(reverse('students:group_recommendations_ajax', kwargs={'group_pk': group.group_id}))
+        self.assertEqual(resp.status_code, 200)
+        recs = resp.json()['recommendations']
+        self.assertEqual(len(recs), 2)
+        # student1 should rank higher (covers backend)
+        self.assertEqual(recs[0]['student_id'], self.student1.student_id)
+        self.assertTrue(recs[0]['coverage_pct'] >= 50)
+        self.assertTrue(any(m['skill_name'] == 'Backend Web Development' for m in recs[0]['met']))
+
+        # Assign student1 to another group in same project - should be excluded
+        group2 = Group.objects.create(project=self.project, group_name='Team Other')
+        self.client.post(reverse('students:group_member_add_ajax', kwargs={'group_pk': group2.group_id}),
+                         {'student_id': self.student1.student_id})
+        resp2 = self.client.get(reverse('students:group_recommendations_ajax', kwargs={'group_pk': group.group_id}))
+        recs2 = resp2.json()['recommendations']
+        self.assertEqual(len(recs2), 1)
+        self.assertEqual(recs2[0]['student_id'], self.student2.student_id)
+
+    def test_group_recommendations_edge_cases(self):
+        # Project with no requirements
+        project_empty = Project.objects.create(project_name='Empty Project')
+        group_empty = Group.objects.create(project=project_empty, group_name='EmptyTeam')
+        resp = self.client.get(reverse('students:group_recommendations_ajax', kwargs={'group_pk': group_empty.group_id}))
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()['recommendations'], [])
+
+        # Project with requirement but student has no skills
+        project3 = Project.objects.create(project_name='Proj3')
+        skill_x = Skill.objects.create(skill_name='Testing', description='QA')
+        ProjectRequiredSkill.objects.create(project=project3, skill=skill_x, required_level=4)
+        student3 = Student.objects.create(
+            student_number='2024-003', first_name='Alex', last_name='Cruz',
+            email='alex@example.com', course='BSIT', section='3A', year_level=3
+        )
+        group3 = Group.objects.create(project=project3, group_name='Team3')
+        resp3 = self.client.get(reverse('students:group_recommendations_ajax', kwargs={'group_pk': group3.group_id}))
+        self.assertEqual(resp3.status_code, 200)
+        recs3 = resp3.json()['recommendations']
+        self.assertTrue(len(recs3) >= 1)
+        # Find our student
+        rec_s3 = [r for r in recs3 if r['student_id'] == student3.student_id][0]
+        self.assertEqual(rec_s3['coverage_pct'], 0)
+        self.assertEqual(len(rec_s3['missing']), 1)
+        self.assertEqual(rec_s3['missing'][0]['have'], 0)
+
+
+    def test_group_recommendations_requires_login(self):
+        group = Group.objects.create(project=self.project, group_name='TeamAnon')
+        self.client.logout()
+        resp = self.client.get(reverse('students:group_recommendations_ajax', kwargs={'group_pk': group.group_id}))
+        self.assertEqual(resp.status_code, 302)
+        self.assertTrue('login' in resp['Location'].lower() or 'next=' in resp['Location'].lower())

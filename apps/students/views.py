@@ -950,6 +950,82 @@ def project_skill_delete_ajax(request, pk):
 MAX_GROUP_MEMBERS = 5
 
 
+def _student_skill_index_for_students(student_list):
+    """Build a map of student_id -> {skill_id: max proficiency} for given students."""
+    student_ids = [s.student_id for s in student_list]
+    index = {sid: {} for sid in student_ids}
+    if not student_ids:
+        return index
+    for ss in StudentSkill.objects.filter(student_id__in=student_ids).select_related('skill'):
+        sid = ss.student_id
+        sk = ss.skill_id
+        if sk not in index[sid] or ss.proficiency_level > index[sid][sk]:
+            index[sid][sk] = ss.proficiency_level
+    return index
+
+
+def _recommend_students_for_group(group, limit=10):
+    """Recommend students not yet assigned to any group for this project.
+    Score by coverage of project's required skills (weighted by requirement level).
+    """
+    project = group.project
+    required = list(
+        ProjectRequiredSkill.objects.filter(project=project).select_related('skill')
+    )
+    if not required:
+        return []
+
+    assigned_ids = set(
+        GroupMember.objects.filter(group__project=project).values_list('student_id', flat=True)
+    )
+    candidates = Student.objects.exclude(student_id__in=assigned_ids).order_by('last_name', 'first_name')
+    skill_index = _student_skill_index_for_students(candidates)
+
+    recommendations = []
+    for student in candidates:
+        student_skills = skill_index.get(student.student_id, {})
+        covered = 0
+        total_req = len(required)
+        missing_list = []
+        met_list = []
+        score_total = 0
+        for req in required:
+            req_level = req.required_level or 0
+            have = student_skills.get(req.skill_id, 0)
+            if have >= req_level and req_level > 0:
+                covered += 1
+                met_list.append({
+                    'skill_name': req.skill.skill_name,
+                    'required': req_level,
+                    'have': have,
+                })
+                score_total += req_level
+            else:
+                missing_list.append({
+                    'skill_name': req.skill.skill_name,
+                    'required': req_level,
+                    'have': have,
+                })
+        coverage_pct = round((covered / total_req) * 100) if total_req else 0
+        recommendations.append({
+            'student_id': student.student_id,
+            'student_number': student.student_number,
+            'name': f"{student.last_name}, {student.first_name}",
+            'course': student.course,
+            'section': student.section,
+            'year_level': student.year_level,
+            'coverage_pct': coverage_pct,
+            'covered_count': covered,
+            'total_required': total_req,
+            'met': met_list,
+            'missing': missing_list,
+            'score': score_total,
+        })
+
+    recommendations.sort(key=lambda x: (x['coverage_pct'], x['score'], x['name']), reverse=True)
+    return recommendations[:limit]
+
+
 def _analyze_group_skills(group):
     """Calculate compatibility score, satisfied skills, and skill gaps for a group."""
     required_skills = list(
@@ -1304,3 +1380,10 @@ def group_member_remove_ajax(request, group_pk, member_pk):
         'analysis': _analyze_group_skills(group),
     })
 
+
+@login_required(login_url='login')
+def group_recommendations_ajax(request, group_pk):
+    """Return recommended students for a group based on project skill requirements."""
+    group = get_object_or_404(Group.objects.select_related('project'), pk=group_pk)
+    recommendations = _recommend_students_for_group(group)
+    return JsonResponse({'recommendations': recommendations})
