@@ -196,12 +196,6 @@ Potential improvements include:
 - A comprehensive analytics dashboard.
 - Additional usability and reliability testing.
 
-## Documentation
-
-The formal academic concept paper is maintained separately in the `documentation` folder.
-
-For further information about the project's background, objectives, significance, scope, and limitations, refer to the concept paper included in the repository.
-
 ## Project Status
 
 **Status:** Under Development
