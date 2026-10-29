@@ -1972,6 +1972,7 @@ textarea.form-control {
    12. Motion
    -------------------------------------------------------------------------- */
 
+/*
    Design notes
    ------------
    * Entrances animate `opacity` + `transform` only (compositor friendly).
@@ -2214,8 +2215,15 @@ textarea.form-control {
 
 .dropdown-menu .dropdown-item,
 .dropdown-menu .dropdown-divider {
-  animation: sg-item-in var(--sg-dur-fast) var(--sg-ease-out) backwards;
+  animation: sg-item-in var(--sg-dur-base) var(--sg-ease-out) backwards;
 }
+
+/* Items cascade in so a menu reads as a group instead of a single flash.
+   Delays are capped: the last item never waits longer than 0.16s. */
+.dropdown-menu > *:nth-child(2) { animation-delay: 0.04s; }
+.dropdown-menu > *:nth-child(3) { animation-delay: 0.08s; }
+.dropdown-menu > *:nth-child(4) { animation-delay: 0.12s; }
+.dropdown-menu > *:nth-child(n + 5) { animation-delay: 0.16s; }
 
 /* ---- Toasts -------------------------------------------------------------- */
 
