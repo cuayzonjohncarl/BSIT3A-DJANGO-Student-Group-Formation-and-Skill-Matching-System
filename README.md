@@ -1,193 +1,209 @@
 # Student Group Formation and Skill Matching System
 
-A Django-based web application for managing students, skills, projects, and forming student groups with skill matching and gap analysis.
+A web-based academic project developed by BSIT students to support student skill management, project requirement tracking, and more balanced group formation.
 
-## Project Purpose
+## Project Information
 
-This system helps manage:
-- Student records and profiles
-- Skills catalog and student skill proficiency levels
-- Projects and their required skills with proficiency levels
-- Group formation with membership management
-- Skill matching analysis and gap detection for groups against project requirements
+- **Project Title:** Development of a Web-Based Student Group Formation and Skill Matching System
+- **Course:** Bachelor of Science in Information Technology (BSIT 3A)
+- **Developers:**
+  - John Carl V. Cuayzon
+  - Ryan M. Balinas
+  - John Cris G. Egca
+- **Backend:** Python and Django
+- **Database:** MySQL / MariaDB
+- **Frontend:** HTML, CSS, JavaScript, and Bootstrap
 
-## Implemented Features
+## About the Project
 
-- **Student Management**: CRUD operations for student records (student number, name, email, course, section, year level) with search and pagination. Year level is optional and, when provided, is validated to 1-4.
-- **Skill Management**: CRUD operations for skills catalog (search and pagination). Deletion is blocked if the skill is assigned to a student or required by a project.
-- **Student Skills**: Assign skills to students with proficiency levels (1-5 scale), with validation and prevention of duplicate assignments.
-- **Project Management**: CRUD operations for projects (search and pagination). Deletion is blocked if the project has required skills defined.
-- **Project Required Skills**: Define skill requirements per project with required proficiency levels (1-5 scale), with validation and prevention of duplicate requirements.
-- **Group Formation & Membership**: Create groups per project, add/remove members (max 5 members per group as enforced in views), and prevent a student from joining more than one group on the same project.
-- **Skill Gap Analysis**: Per-group analysis showing satisfied/deficient/missing skills, match percentage, and detailed information per required skill (status, best level in group, covering student, and gap).
-- **Group Recommendation Engine**: Recommends eligible students for a given group based on the project's required skills and each student's proficiency levels. Recommendations report skill coverage percentages, counts of covered/required skills, and lists of met/satisfied and missing skills. Students already assigned to any group on the same project are excluded from recommendations. The system assists with manual group formation; it does not automatically create groups or assign members.
-- **Authentication**: Login-required access to management features (via `@login_required`). Some admin/user management views are restricted to superusers.
-- **Search & Pagination**: Filterable lists across entities where implemented.
+Traditional student group formation often relies on random assignments, student self-selection, or other methods that may not consider individual technical skills. These approaches can result in unbalanced teams, missing competencies, and difficulties completing academic projects.
 
+The Student Group Formation and Skill Matching System aims to address these challenges through a centralized web-based platform that manages student profiles, technical skills, project requirements, and group information.
 
-## Team Members
+The system is intended to help instructors make more informed group formation decisions by considering students' skills and the competencies required for a project.
 
-- John Carl V. Cuayzon
-- Ryan M. Balinas
-- John Cris G. Egca
+## Project Objectives
 
-## Prerequisites
+The main objective is to develop a web-based system that supports skill-based student group formation for academic projects.
 
-- Python 3.12+ (tested in this environment)
-- MySQL/MariaDB server
-- pip (Python package manager)
+Specifically, the project aims to:
 
-## Installation & Setup
+1. Manage student profiles and technical skill information.
+2. Maintain a catalog of technical skills and proficiency levels.
+3. Record projects and their required technical competencies.
+4. Evaluate group skill coverage and identify potential skill gaps.
+5. Recommend suitable students based on group skill requirements.
+6. Support secure access and administrative management.
 
-### 1. Clone the repository
+## Key Features
+
+The following features are part of the project's current implementation and development scope. Individual features should be verified against the latest working version.
+
+### Student Management
+- Maintain student records and academic information.
+- View and manage student profiles.
+- Support student directory operations.
+
+### Skills Management
+- Maintain a catalog of technical skills.
+- Associate students with their technical skills.
+- Represent proficiency using a five-point scale.
+
+### Project Management
+- Manage academic project information.
+- Define required skills for individual projects.
+- Specify minimum proficiency levels for required skills.
+
+### Group Management and Skill Matching
+- Manage project groups and group membership.
+- Review group composition in relation to project requirements.
+- Identify skill coverage and potential competency gaps.
+- Recommend potential group members based on skill requirements.
+
+### Authentication and Administration
+- Provide account registration and login functionality.
+- Use Django's authentication and administration facilities where configured.
+- Support administrative management of project data.
+
+**Development note:** Automated group formation, fully implemented role-specific permissions, and a complete analytics dashboard must be verified before being described as finished features.
+
+## Technology Stack
+
+| Component | Technology |
+|---|---|
+| Programming Language | Python 3 |
+| Web Framework | Django 5 |
+| Database | MySQL / MariaDB |
+| Frontend | HTML5, CSS3, JavaScript |
+| UI Framework | Bootstrap 5 |
+| Database Testing | SQLite test configuration |
+| Testing Framework | Django Test Framework |
+
+## Database
+
+The project uses a relational database named `student_group_matching`.
+
+The database includes tables for:
+
+- Students
+- Skills
+- Student skills
+- Projects
+- Project required skills
+- Groups
+- Group members
+
+The database configuration and existing schema must be preserved when running the application. Some project models may use existing database tables rather than Django-managed migrations.
+
+## Installation and Setup
+
+### Prerequisites
+
+Install or prepare the following:
+
+- Python 3.12
+- MySQL or MariaDB
+- Git
+- Visual Studio Code (optional)
+
+### 1. Clone the Repository
 
 ```bash
 git clone https://github.com/cuayzonjohncarl/BSIT3A-DJANGO-Student-Group-Formation-and-Skill-Matching-System.git
+```
+
+### 2. Open the Project Folder
+
+```bash
 cd BSIT3A-DJANGO-Student-Group-Formation-and-Skill-Matching-System
 ```
 
-### 2. Create and activate virtual environment
+### 3. Activate the Virtual Environment
 
-**Windows (PowerShell):**
+On Windows PowerShell:
+
 ```powershell
-python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 ```
 
-**Windows (Command Prompt):**
-```cmd
-python -m venv .venv
-.\.venv\Scripts\activate.bat
+If the virtual environment does not exist, create it first using an installed compatible Python version:
+
+```powershell
+py -3.12 -m venv .venv
 ```
 
-**Linux/Mac:**
-```bash
-python -m venv .venv
-source .venv/bin/activate
+Then activate it using the command above.
+
+### 4. Install Dependencies
+
+```powershell
+python -m pip install -r requirements.txt
 ```
 
-### 3. Install dependencies
+### 5. Configure the Database
 
-```bash
-pip install -r requirements.txt
+Ensure that MySQL or MariaDB is running and that the `student_group_matching` database exists.
+
+Review `mysite/settings.py` and configure the database connection using your local database credentials. Do not commit database passwords or other secrets to GitHub.
+
+**Important:** Check the existing database schema and Django migration configuration before running migrations. Do not run migrations against the existing database without confirming that the changes are safe.
+
+### 6. Run the Django System Check
+
+```powershell
+python manage.py check
 ```
 
-Dependencies:
-- Django==5.0.14
-- mysqlclient==2.2.8
-- openpyxl==3.1.5
+### 7. Start the Development Server
 
-### 4. Database Setup (MySQL/MariaDB)
-
-**Important Notes:**
-- The student-domain models (`Student`, `Skill`, `StudentSkill`, `Project`, `ProjectRequiredSkill`, `Group`, `GroupMember` in `apps.students`) are declared as `managed = False`. **Their tables must already exist in the database - do not rely on Django migrations to create or alter them.**
-- Do **not** delete, reset, recreate, or overwrite the existing database or its data.
-- The `apps.info` app has migrations (see `apps/info/migrations/0001_initial.py`) and uses table `tblinfo`.
-- `apps.core` and `apps.users` have models with default managed behavior (Django auth/admin tables are managed by Django; migrations are available for managed apps as configured).
-
-**Steps:**
-
-1. Create a MySQL/MariaDB database named `student_group_matching` (matching the configuration in `mysite/settings.py`):
-```sql
-CREATE DATABASE student_group_matching CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-```
-
-2. Ensure the required tables exist. You can use the provided SQL dump:
-   - `bsitcrud.sql` - contains database schema/data
-   - See `DATABASE_DESIGN.md` for the table structure
-
-3. Update database credentials in `mysite/settings.py` if needed. The default configuration uses:
-   - ENGINE: `django.db.backends.mysql`
-   - NAME: `student_group_matching`
-   - USER: `root`
-   - PASSWORD: `` (empty)
-   - HOST: `localhost`
-   - PORT: `3306`
-
-   **You must supply your own database credentials if they differ. Never commit credentials to version control.**
-
-4. Run migrations for managed apps only:
-```bash
-python manage.py migrate
-```
-
-This will create Django's auth, session, admin, and content type tables, plus any managed app tables (e.g., `tblinfo` from `apps.info`). Because `apps.students` models are `managed = False`, migrations will not create/alter those tables — ensure they pre-exist in the configured database.
-
-### 5. Create a superuser (optional)
-
-```bash
-python manage.py createsuperuser
-```
-
-### 6. Run the development server
-
-```bash
+```powershell
 python manage.py runserver
 ```
 
-Access the application at `http://127.0.0.1:8000/`
+Open the following address in your browser:
+
+http://127.0.0.1:8000/
+
+The application may require additional database or authentication setup before every page can be used successfully.
 
 ## Testing
 
-The project includes tests in `apps/students/tests.py`, `apps/core/tests.py`, `apps/users/tests.py`, and `apps/info/tests.py`. Tests can be run in two modes:
+To run the project's automated tests with the dedicated test settings, use:
 
-### Default settings (MySQL/MariaDB)
-Uses the database configuration from `mysite/settings.py` (MySQL/MariaDB as configured).
-
-**Verified behavior (in this environment):**
-```bash
-python manage.py test apps.students.tests
-```
-- Found 90 tests
-- Ran successfully with `OK (skipped=62)` (62 skipped). Many DB-backed CRUD/integration tests are skipped under the default settings depending on environment; a MariaDB Strict Mode warning may be reported.
-
-**When to use:** To test against your configured MySQL/MariaDB instance. Note that the `students` app models are `managed = False` and expect pre-existing tables; some tests are introspective and will run regardless, while others may be skipped depending on the test environment.
-
-### Test settings (SQLite in-memory - recommended for isolated testing)
-Uses `mysite/test_settings.py` which overrides the database to an in-memory SQLite database.
-
-**Verified behavior (in this environment):**
-```bash
-python manage.py test apps.students.tests --settings=mysite.test_settings
-```
-- Found 90 tests
-- All 90 tests passed with zero failures and zero skips (`Ran 90 tests ... OK`)
-- Uses `UnmanagedTablesMixin` which creates the unmanaged tables (Student, Skill, StudentSkill, Project, ProjectRequiredSkill, Group, GroupMember) only in the throwaway test database via Django's schema editor
-
-**When to use:** For isolated, reliable testing without touching your MySQL/MariaDB database. This exercises DB-backed CRUD flows, group/matching logic, and group recommendation functionality.
-
-**Important:** Running with `mysite.test_settings` (SQLite in-memory) does **not** prove that every operation works against the actual MySQL/MariaDB database. Differences in SQL dialects, constraints, collation, data types, and the fact that models are `managed = False` (requiring pre-existing tables) mean MySQL/MariaDB behavior should be verified separately in an environment with a properly configured instance containing the required schema. The SQLite test run is for isolated verification of application logic only.
-
-
-## Project Structure
-
-```
-apps/
-├── core/       # Core functionality (dashboard)
-├── info/       # Info app (managed, has migrations)
-├── students/   # Main app - student/group/skill management (unmanaged models)
-├── users/      # User management/authentication
-mysite/         # Project settings and URL configuration
-templates/      # HTML templates (Tabler UI framework)
-static/         # Static files (CSS, JS)
+```powershell
+python manage.py test --settings=mysite.test_settings
 ```
 
-## Additional Documentation
+Review the test output to determine whether the tests pass, fail, or are skipped in your current environment.
 
-- `DATABASE_DESIGN.md` - Detailed database schema design
-- `bsitcrud.sql` - Database dump/schema
-- `documentation/BSIT-Concept-Paper-Student-Group-Formation.pdf` - Project concept paper
+## Scope and Limitations
 
-## Limitations / Planned Work
+The system focuses on structured technical skills and project requirements. It does not currently claim to evaluate personality, psychological traits, or student schedule compatibility.
 
-Based on inspection of the codebase (as implemented), the following from the original concept paper are not fully implemented or not verified in the current codebase:
+Student proficiency assessments may rely on self-reported information and instructor verification.
 
-- **Automatic group formation**: Not implemented. The system provides group management and a recommendation endpoint to assist with manual formation; it does not auto-generate groups or auto-assign members.
-- **Separate Administrator/Instructor/Student permissions/roles**: Not implemented as distinct role-based access control for these groups. Access control is primarily login-required (`@login_required`); some user management views are restricted to superusers (`@user_passes_test(_is_superuser, ...)`). There is no evidence of separate Administrator/Instructor/Student role groups/permissions enforced across all features.
-- **Analytics dashboard**: Not implemented as a dedicated analytics feature. The home/dashboard (`apps.core.views.home`, route `home/` named `dashboard`) shows basic counts (students, skills, projects, groups) and group match percentages using `_analyze_group_skills`, but there is no comprehensive analytics/reporting dashboard as described in the concept paper.
+The completeness of automated group formation, role-specific access permissions, and analytics features depends on the current implementation and requires verification.
 
-Other notes:
-- All management URLs require authentication (`@login_required`). Login is available via auth routes.
-- The system enforces business rules like preventing duplicate assignments, max group size (5 members), and students belonging to only one group per project.
-- Skill matching/gap analysis uses actual database records to compute coverage based on student proficiency vs project requirements.
-- Year levels are validated as integers 1-4 (1st through 4th Year) when provided; proficiency and required levels are validated as integers 1-5 in the relevant forms/validations.
+## Future Improvements
+
+Potential improvements include:
+
+- Automated formation of balanced student groups.
+- More comprehensive skill matching and compatibility scoring.
+- Improved skill gap analysis.
+- Enhanced group member recommendations.
+- Separate permissions for administrators, instructors, and students.
+- A comprehensive analytics dashboard.
+- Additional usability and reliability testing.
+
+## Documentation
+
+The formal academic concept paper is maintained separately in the `documentation` folder.
+
+For further information about the project's background, objectives, significance, scope, and limitations, refer to the concept paper included in the repository.
+
+## Project Status
+
+**Status:** Under Development
+
+This project is being developed incrementally as part of the BSIT academic requirements. Features and documentation may change as development, testing, and evaluation continue.

@@ -3,186 +3,174 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta
-  name="viewport"
-  content="width=device-width, initial-scale=1, viewport-fit=cover"
-  />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta http-equiv="X-UA-Compatible" content="ie=edge" />
+  <meta name="color-scheme" content="dark" />
   <title>
     Create Account - Student Group Formation and Skill Matching System
   </title>
-<link href="{% static 'css/tabler.css' %}" rel="stylesheet" />
-<link href="{% static 'css/tabler-themes.css' %}" rel="stylesheet" />
-<link href="{% static 'css/app-theme.css' %}?v=2" rel="stylesheet" />
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-<style>
+  <link href="{% static 'css/tabler.css' %}" rel="stylesheet" />
+  <link href="{% static 'css/tabler-themes.css' %}" rel="stylesheet" />
+  <link href="{% static 'css/app-theme.css' %}?v=4" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <style>
     @import url("https://rsms.me/inter/inter.css");
-</style>
+  </style>
 </head>
-<body class="antialiased">
-    <script src="{% static 'js/tabler-theme.js' %}"></script>
-    <div class="page page-center">
-        <div class="container container-tight py-4">
+<body>
+  <div class="sg-auth-page">
+    <div class="sg-auth-wrap sg-auth-wide">
 
-            <!-- Logo / Brand -->
-            <div class="text-center mb-3">
-                <div class="mb-2">
-                  <span class="avatar avatar-lg bg-primary text-white shadow-sm rounded-circle">
-                    <i class="fa-solid fa-shield-halved fa-lg"></i>
-                  </span>
-                </div>
-                <div class="fw-bold fs-2 text-white">
-                  Student Group Formation <span class="text-primary">System</span>
-                </div>
-                <div class="text-muted small">Skill Matching &amp; Team Compatibility Platform</div>
-            </div>
+      <!-- Brand -->
+      <div class="sg-auth-brand">
+        <span class="sg-brand-mark"><i class="fa-solid fa-user-plus"></i></span>
+        <div>
+          <div class="sg-auth-title">Student Group Formation</div>
+          <div class="sg-auth-sub">Skill matching &amp; team compatibility platform</div>
+        </div>
+      </div>
 
-          <div class="card card-md">
-            <div class="card-body">
+      <!-- Registration card -->
+      <div class="card sg-auth-card">
+        <div class="card-body">
 
-                <h2 class="h2 text-center mb-4">Create your account</h2>
+          <h2 class="h4 text-center fw-bold mb-4">Create your account</h2>
 
-                {% if errors %}
-                <div class="alert alert-danger alert-dismissible fade show" role="alert">
-                    <i class="fas fa-exclamation-circle me-2"></i>
-                    Please fix the errors below.
-                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                </div>
+          {% if errors %}
+          <div class="sg-error-box">
+            <i class="fas fa-circle-exclamation mt-1"></i>
+            <span>Please fix the errors below.</span>
+          </div>
+          {% endif %}
+
+          <form method="POST" action="{% url 'register' %}">
+            {% csrf_token %}
+
+            <!-- First Name & Last Name -->
+            <div class="row g-3 mb-3">
+              <div class="col-6">
+                <label class="form-label required">First Name</label>
+                <input
+                  type="text"
+                  name="first_name"
+                  class="form-control {% if errors.first_name %}is-invalid{% endif %}"
+                  placeholder="Juan"
+                  value="{{ form_data.first_name|default:'' }}">
+                {% if errors.first_name %}
+                <div class="invalid-feedback">{{ errors.first_name }}</div>
                 {% endif %}
-
-                <form method="POST" action="{% url 'register' %}">
-                    {% csrf_token %}
-
-                    <!-- First Name & Last Name -->
-                    <div class="row g-3 mb-3">
-                        <div class="col-6">
-                            <label class="form-label required">First Name</label>
-                            <input
-                            type="text"
-                            name="first_name"
-                            class="form-control {% if errors.first_name %}is-invalid{% endif %}"
-                            placeholder=""
-                            value="{{ form_data.first_name|default:'' }}">
-                            {% if errors.first_name %}
-                            <div class="invalid-feedback">{{ errors.first_name }}</div>
-                            {% endif %}
-                        </div>
-                        <div class="col-6">
-                            <label class="form-label required">Last Name</label>
-                            <input
-                            type="text"
-                            name="last_name"
-                            class="form-control {% if errors.last_name %}is-invalid{% endif %}"
-                            placeholder=""
-                            value="{{ form_data.last_name|default:'' }}">
-                            {% if errors.last_name %}
-                            <div class="invalid-feedback">{{ errors.last_name }}</div>
-                            {% endif %}
-                        </div>
-                    </div>
-
-                    <!-- Username -->
-                    <div class="mb-3">
-                        <label class="form-label required">Username</label>
-                        <div class="input-group">
-                            <span class="input-group-text">
-                                <i class="fas fa-user text-secondary"></i>
-                            </span>
-                            <input
-                            type="text"
-                            name="username"
-                            class="form-control {% if errors.username %}is-invalid{% endif %}"
-                            placeholder=""
-                            value="{{ form_data.username|default:'' }}">
-                            {% if errors.username %}
-                            <div class="invalid-feedback">{{ errors.username }}</div>
-                            {% endif %}
-                        </div>
-                    </div>
-
-                    <!-- Email -->
-                    <div class="mb-3">
-                        <label class="form-label required">Email</label>
-                        <div class="input-group">
-                            <span class="input-group-text">
-                                <i class="fas fa-envelope text-secondary"></i>
-                            </span>
-                            <input
-                            type="email"
-                            name="email"
-                            class="form-control {% if errors.email %}is-invalid{% endif %}"
-                            placeholder=""
-                            value="{{ form_data.email|default:'' }}">
-                            {% if errors.email %}
-                            <div class="invalid-feedback">{{ errors.email }}</div>
-                            {% endif %}
-                        </div>
-                    </div>
-
-                    <!-- Password -->
-                    <div class="mb-3">
-                        <label class="form-label required">Password</label>
-                        <div class="input-group">
-                            <span class="input-group-text">
-                                <i class="fas fa-lock text-secondary"></i>
-                            </span>
-                            <input
-                            type="password"
-                            name="password"
-                            id="password"
-                            class="form-control {% if errors.password %}is-invalid{% endif %}"
-                            placeholder="Min. 8 characters">
-                            <button class="btn btn-outline-secondary" type="button" id="togglePassword">
-                                <i class="fas fa-eye" id="eyeIcon"></i>
-                            </button>
-                            {% if errors.password %}
-                            <div class="invalid-feedback">{{ errors.password }}</div>
-                            {% endif %}
-                        </div>
-                    </div>
-
-                    <!-- Confirm Password -->
-                    <div class="mb-3">
-                        <label class="form-label required">Confirm Password</label>
-                        <div class="input-group">
-                            <span class="input-group-text">
-                                <i class="fas fa-lock text-secondary"></i>
-                            </span>
-                            <input
-                            type="password"
-                            name="confirm_password"
-                            id="confirm_password"
-                            class="form-control {% if errors.confirm_password %}is-invalid{% endif %}"
-                            placeholder="Repeat your password">
-                            <button class="btn btn-outline-secondary" type="button" id="toggleConfirm">
-                                <i class="fas fa-eye" id="eyeIconConfirm"></i>
-                            </button>
-                            {% if errors.confirm_password %}
-                            <div class="invalid-feedback">{{ errors.confirm_password }}</div>
-                            {% endif %}
-                        </div>
-                    </div>
-
-                    <!-- Submit -->
-                    <div class="form-footer">
-                        <button type="submit" class="btn btn-primary w-100">
-                            <i class="fas fa-user-plus me-2"></i>Create Account
-                        </button>
-                    </div>
-
-                </form>
-
+              </div>
+              <div class="col-6">
+                <label class="form-label required">Last Name</label>
+                <input
+                  type="text"
+                  name="last_name"
+                  class="form-control {% if errors.last_name %}is-invalid{% endif %}"
+                  placeholder="Dela Cruz"
+                  value="{{ form_data.last_name|default:'' }}">
+                {% if errors.last_name %}
+                <div class="invalid-feedback">{{ errors.last_name }}</div>
+                {% endif %}
+              </div>
             </div>
-        </div>
 
-        <div class="text-center text-secondary mt-3">
-            Already have an account?
-            <a href="{% url 'login' %}" class="text-primary fw-bold">Login</a>
+            <!-- Username -->
+            <div class="sg-auth-field">
+              <label class="form-label required">Username</label>
+              <div class="input-group">
+                <span class="input-group-text"><i class="fas fa-user"></i></span>
+                <input
+                  type="text"
+                  name="username"
+                  class="form-control {% if errors.username %}is-invalid{% endif %}"
+                  placeholder="Choose a username"
+                  autocomplete="username"
+                  value="{{ form_data.username|default:'' }}">
+                {% if errors.username %}
+                <div class="invalid-feedback">{{ errors.username }}</div>
+                {% endif %}
+              </div>
+            </div>
+
+            <!-- Email -->
+            <div class="sg-auth-field">
+              <label class="form-label required">Email</label>
+              <div class="input-group">
+                <span class="input-group-text"><i class="fas fa-envelope"></i></span>
+                <input
+                  type="email"
+                  name="email"
+                  class="form-control {% if errors.email %}is-invalid{% endif %}"
+                  placeholder="you@example.com"
+                  autocomplete="email"
+                  value="{{ form_data.email|default:'' }}">
+                {% if errors.email %}
+                <div class="invalid-feedback">{{ errors.email }}</div>
+                {% endif %}
+              </div>
+            </div>
+
+            <!-- Password -->
+            <div class="sg-auth-field">
+              <label class="form-label required">Password</label>
+              <div class="input-group">
+                <span class="input-group-text"><i class="fas fa-lock"></i></span>
+                <input
+                  type="password"
+                  name="password"
+                  id="password"
+                  class="form-control {% if errors.password %}is-invalid{% endif %}"
+                  placeholder="Min. 8 characters"
+                  autocomplete="new-password">
+                <button class="btn btn-outline-secondary" type="button" id="togglePassword" aria-label="Show password">
+                  <i class="fas fa-eye" id="eyeIcon"></i>
+                </button>
+                {% if errors.password %}
+                <div class="invalid-feedback">{{ errors.password }}</div>
+                {% endif %}
+              </div>
+            </div>
+
+            <!-- Confirm Password -->
+            <div class="sg-auth-field">
+              <label class="form-label required">Confirm Password</label>
+              <div class="input-group">
+                <span class="input-group-text"><i class="fas fa-lock"></i></span>
+                <input
+                  type="password"
+                  name="confirm_password"
+                  id="confirm_password"
+                  class="form-control {% if errors.confirm_password %}is-invalid{% endif %}"
+                  placeholder="Repeat your password"
+                  autocomplete="new-password">
+                <button class="btn btn-outline-secondary" type="button" id="toggleConfirm" aria-label="Show password">
+                  <i class="fas fa-eye" id="eyeIconConfirm"></i>
+                </button>
+                {% if errors.confirm_password %}
+                <div class="invalid-feedback">{{ errors.confirm_password }}</div>
+                {% endif %}
+              </div>
+            </div>
+
+            <!-- Submit -->
+            <div class="form-footer mt-4">
+              <button type="submit" class="btn btn-primary w-100">
+                <i class="fas fa-user-plus me-1"></i> Create Account
+              </button>
+            </div>
+
+          </form>
+
         </div>
+      </div>
+
+      <div class="sg-auth-footer">
+        Already have an account?
+        <a href="{% url 'login' %}" class="fw-bold">Login</a>
+      </div>
 
     </div>
-</div>
-{% include 'theme/settings.html' %}
+  </div>
 
 <script src="{% static 'js/tabler.js' %}" defer></script>
 <script>

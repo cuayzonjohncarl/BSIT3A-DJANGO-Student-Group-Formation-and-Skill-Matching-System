@@ -140,13 +140,53 @@ def logout_view(request):
 
 @login_required(login_url='login')
 def home(request):
-    from apps.students.models import Student, Skill, Project, Group
+    from apps.students.models import (
+        Student,
+        Skill,
+        Project,
+        Group,
+        ProjectRequiredSkill,
+    )
     from apps.students.views import _analyze_group_skills
 
     total_students = Student.objects.count()
     total_skills = Skill.objects.count()
     total_projects = Project.objects.count()
     total_groups = Group.objects.count()
+
+    # Real counts derived from existing records only - nothing is estimated.
+    students_with_skills = Student.objects.filter(
+        student_skills__isnull=False
+    ).distinct().count()
+    total_requirements = ProjectRequiredSkill.objects.count()
+
+    # Aggregate the existing skill-gap analysis across every formed group.
+    satisfied_total = 0
+    deficient_total = 0
+    missing_total = 0
+    checks_total = 0
+    full_match_groups = 0
+    match_sum = 0
+    groups_with_requirements = 0
+    for group in Group.objects.select_related('project'):
+        analysis = _analyze_group_skills(group)
+        satisfied_total += analysis['satisfied_count']
+        deficient_total += analysis['deficient_count']
+        missing_total += analysis['missing_count']
+        checks_total += analysis['total_required']
+        if analysis['total_required']:
+            groups_with_requirements += 1
+            match_sum += analysis['match_percentage']
+            if analysis['match_percentage'] == 100:
+                full_match_groups += 1
+
+    coverage_pct = (
+        round((satisfied_total / checks_total) * 100) if checks_total else None
+    )
+    avg_match_pct = (
+        round(match_sum / groups_with_requirements)
+        if groups_with_requirements else None
+    )
 
     recent_groups = list(Group.objects.select_related('project')[:6])
     analyzed_recent = []
@@ -161,6 +201,16 @@ def home(request):
         'total_skills': total_skills,
         'total_projects': total_projects,
         'total_groups': total_groups,
+        'students_with_skills': students_with_skills,
+        'total_requirements': total_requirements,
+        'satisfied_total': satisfied_total,
+        'deficient_total': deficient_total,
+        'missing_total': missing_total,
+        'checks_total': checks_total,
+        'full_match_groups': full_match_groups,
+        'groups_with_requirements': groups_with_requirements,
+        'coverage_pct': coverage_pct,
+        'avg_match_pct': avg_match_pct,
         'analyzed_recent': analyzed_recent,
     })
 

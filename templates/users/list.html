@@ -1,61 +1,37 @@
 {% extends "theme/base.html" %}
+{% block title %}Users - Student Group Formation and Skill Matching System{% endblock %}
+{% block topbar_title %}Users{% endblock %}
 {% block content %}
-<div class="container-xl">
+<div class="container-xl pt-3 pb-4">
 
  <!-- BEGIN PAGE HEADER -->
-<div class="page-header d-print-none" aria-label="Page header">
-  <div class="container-xl">
-
-    <div class="row align-items-center">
-
-      <!-- LEFT -->
-      <div class="col">
-
-        <div class="page-pretitle">Overview</div>
-
-        <!-- TITLE + SEARCH (DESKTOP ONLY) -->
-        <div class="d-flex align-items-center gap-3 flex-wrap d-none d-md-flex">
-          <h2 class="page-title mb-0">User Management</h2>
-        </div>
-
-        <!-- TITLE ONLY (MOBILE) -->
-        <h2 class="page-title mb-0 d-md-none">User Management</h2>
-
-      </div>
-
-        <!-- RIGHT -->
-        <!-- <div class="col-auto">
-        <div class="btn-list">
-          <button type="button"
-             class="btn btn-primary"
-             data-bs-toggle="modal"
-             data-bs-target="#editUserModal"
-             data-mode="create">
-            <i class="ti ti-plus me-1"></i> Add User
-          </button>
-        </div>
-      </div> -->
-
+<div class="page-header d-print-none mb-4" aria-label="Page header">
+  <div class="row align-items-center g-3">
+    <div class="col">
+      <div class="page-pretitle">Access</div>
+      <h2 class="page-title mb-1">User Management</h2>
+      <div class="sg-page-desc">Review and manage accounts that can sign in to the system.</div>
     </div>
   </div>
 </div>
-<br>
 
 <!-- SEARCH BAR -->
-<form method="GET" class="mb-3">
-    <div class="input-group" style="max-width: 400px;">
-        <span class="input-group-text"><i class="ti ti-search"></i></span>
-        <input type="text"
-               name="q"
-               value="{{ query }}"
-               class="form-control"
-               placeholder="Search by name, username, or email...">
-        {% if query %}
-        <a href="{% url 'users:user_list' %}" class="btn btn-outline-secondary">Clear</a>
-        {% endif %}
-        <button type="submit" class="btn btn-primary">Search</button>
-    </div>
-</form>
+<div class="sg-toolbar mb-4">
+  <form method="GET">
+      <div class="input-group" style="max-width: 480px;">
+          <span class="input-group-text"><i class="fas fa-search"></i></span>
+          <input type="text"
+                 name="q"
+                 value="{{ query }}"
+                 class="form-control"
+                 placeholder="Search by name, username, or email...">
+          {% if query %}
+          <a href="{% url 'users:user_list' %}" class="btn btn-outline-secondary">Clear</a>
+          {% endif %}
+          <button type="submit" class="btn btn-primary">Search</button>
+      </div>
+  </form>
+</div>
 
 <div id="userAlert" class="alert alert-info alert-dismissible fade {% if not messages %}d-none{% endif %}{% if messages %}show{% endif %}" role="alert">
     <i class="fas fa-circle-check alert-icon" aria-hidden="true"></i>
