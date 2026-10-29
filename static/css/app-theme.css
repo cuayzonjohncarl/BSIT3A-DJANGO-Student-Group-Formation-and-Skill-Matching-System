@@ -63,6 +63,13 @@
   --sg-focus-ring: 0 0 0 0.2rem rgba(117, 101, 246, 0.28);
   --sg-transition: 0.18s cubic-bezier(0.4, 0, 0.2, 1);
 
+  /* Motion tokens (see section 12) */
+  --sg-ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --sg-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --sg-dur-fast: 0.16s;
+  --sg-dur-base: 0.25s;
+  --sg-dur-slow: 0.45s;
+
   /* ---- Tabler / Bootstrap variable overrides (dark) ---- */
   --tblr-body-bg: var(--sg-bg);
   --tblr-body-bg-rgb: 11, 13, 20;
@@ -400,7 +407,7 @@ h1, h2, h3, h4, h5, h6,
   width: 1.15rem;
   font-size: 0.9rem;
   color: var(--sg-text-3);
-  transition: color var(--sg-transition);
+  transition: color var(--sg-transition), transform var(--sg-transition);
 }
 
 .sg-sidebar .nav-link .nav-link-title {
@@ -782,6 +789,8 @@ textarea.form-control {
   color: var(--sg-text-3);
   font-size: 0.82rem;
   border-radius: 10px;
+  transition: border-color var(--sg-transition), color var(--sg-transition),
+    background-color var(--sg-transition);
 }
 
 .form-label {
@@ -1026,6 +1035,11 @@ textarea.form-control {
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   vertical-align: middle;
   font-size: 0.85rem;
+  transition: background-color var(--sg-transition), color var(--sg-transition);
+}
+
+.table tbody tr {
+  transition: background-color var(--sg-transition);
 }
 
 .table tbody tr:last-child td {
@@ -1169,6 +1183,9 @@ textarea.form-control {
   border-radius: 999px;
   transition: width 0.7s cubic-bezier(0.4, 0, 0.2, 1);
   background-image: none;
+  /* Entrance (section 12) grows the bar from its left edge without touching
+     the `width` transition used for live updates. */
+  transform-origin: left center;
 }
 
 .progress-bar.bg-success,
@@ -1625,6 +1642,8 @@ textarea.form-control {
   height: 0.42rem;
   border-radius: 999px;
   background: #262c3d;
+  transition: background-color var(--sg-transition), box-shadow var(--sg-transition),
+    transform var(--sg-transition);
 }
 
 .sg-level span.on {
@@ -1953,6 +1972,23 @@ textarea.form-control {
    12. Motion
    -------------------------------------------------------------------------- */
 
+   Design notes
+   ------------
+   * Entrances animate `opacity` + `transform` only (compositor friendly).
+   * Entrance keyframes use `animation-fill-mode: backwards`, NOT `both`/
+     `forwards`. A finished animation with `both` keeps applying its final
+     `transform`, which would silently override hover states such as
+     `.sg-stat:hover { transform: translateY(-3px) }`.
+   * Everything here runs at most once per element (page load, modal open,
+     dropdown open, or DOM insertion). Nothing loops, nothing spins.
+   * Staggering is driven by the `--sg-stagger` custom property so a single
+     rule covers any number of cards.
+   * `prefers-reduced-motion` collapses durations and delays at the end of
+     this section.
+
+   Keyframes
+   -------------------------------------------------------------------------- */
+
 @keyframes sg-fade-up {
   from {
     opacity: 0;
@@ -1964,23 +2000,287 @@ textarea.form-control {
   }
 }
 
-.sg-animate {
-  animation: sg-fade-up 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+@keyframes sg-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 
-.sg-animate-1 { animation-delay: 0.04s; }
-.sg-animate-2 { animation-delay: 0.08s; }
-.sg-animate-3 { animation-delay: 0.12s; }
-.sg-animate-4 { animation-delay: 0.16s; }
+@keyframes sg-drop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes sg-scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Scale-only: used where a slide already happens on a parent (modals), so
+   the two motions do not fight each other. */
+@keyframes sg-content-in {
+  from { transform: scale(0.975); }
+  to   { transform: scale(1); }
+}
+
+/* Dropdown items rise into place. Items are static children, so this can
+   never fight the positioning transform Popper writes on the menu itself. */
+@keyframes sg-item-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Sidebar active indicator grows in from its centre line. */
+@keyframes sg-indicator-in {
+  from {
+    transform: translateY(-50%) scaleY(0);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(-50%) scaleY(1);
+    opacity: 1;
+  }
+}
+
+/* ---- Staggered entrance helper ------------------------------------------ */
+
+.sg-animate {
+  animation: sg-fade-up var(--sg-dur-slow) var(--sg-ease-out) backwards;
+  animation-delay: calc(min(var(--sg-stagger, 0), 10) * 0.045s);
+}
+
+.sg-animate-1 { --sg-stagger: 1; }
+.sg-animate-2 { --sg-stagger: 2; }
+.sg-animate-3 { --sg-stagger: 3; }
+.sg-animate-4 { --sg-stagger: 4; }
+.sg-animate-5 { --sg-stagger: 5; }
+.sg-animate-6 { --sg-stagger: 6; }
+.sg-animate-7 { --sg-stagger: 7; }
+.sg-animate-8 { --sg-stagger: 8; }
+.sg-animate-9 { --sg-stagger: 9; }
+.sg-animate-10 { --sg-stagger: 10; }
+
+/* ---- Shell: topbar, page header, toolbar, footer ------------------------- */
+
+.sg-topbar-title {
+  animation: sg-fade-up var(--sg-dur-base) var(--sg-ease-out) 0.05s backwards;
+}
+
+.page-body .page-header {
+  animation: sg-fade-up var(--sg-dur-slow) var(--sg-ease-out) backwards;
+}
+
+.page-body .sg-toolbar {
+  animation: sg-fade-up var(--sg-dur-slow) var(--sg-ease-out) 0.06s backwards;
+}
+
+/* Cards that already carry `.sg-animate` opt out of this generic entrance. */
+.page-body .card:not(.sg-animate) {
+  animation: sg-fade-up var(--sg-dur-slow) var(--sg-ease-out) 0.04s backwards;
+}
+
+.sg-footer {
+  animation: sg-fade-in var(--sg-dur-slow) var(--sg-ease) 0.2s backwards;
+}
+
+/* ---- Navigation ---------------------------------------------------------- */
+
+.sg-sidebar .nav-link:hover .nav-link-icon {
+  transform: translateX(2px);
+}
+
+.sg-sidebar .nav-link.active::before {
+  animation: sg-indicator-in var(--sg-dur-slow) var(--sg-ease-out) 0.1s backwards;
+}
+
+/* ---- Forms --------------------------------------------------------------- */
+
+.input-group:focus-within .input-group-text {
+  border-color: rgba(117, 101, 246, 0.7);
+  color: #a79bff;
+}
+
+/* Validation feedback reveals itself only when Bootstrap unhides it. */
+.is-invalid ~ .invalid-feedback {
+  animation: sg-drop-in var(--sg-dur-base) var(--sg-ease-out) 0.08s backwards;
+}
+
+/* Password visibility toggles (auth pages). */
+.input-group .btn i.fa-eye,
+.input-group .btn i.fa-eye-slash {
+  display: inline-block;
+  transition: transform var(--sg-dur-base) var(--sg-ease-out);
+}
+
+.input-group .btn:has(i.fa-eye-slash) i {
+  transform: rotate(-12deg);
+}
+
+.input-group .btn:not(:disabled):active i {
+  transform: scale(0.85);
+}
+
+/* ---- Buttons & pagination ------------------------------------------------ */
+
+.btn:not(:disabled):active {
+  transform: scale(0.97);
+}
+
+.page-link {
+  transition: all var(--sg-transition), transform var(--sg-dur-fast) var(--sg-ease-out);
+}
+
+.page-item:not(.disabled) .page-link:active {
+  transform: scale(0.94);
+}
+
+/* ---- Alerts, errors, empty states ---------------------------------------- */
+
+.alert:not(.fade) {
+  animation: sg-drop-in var(--sg-dur-base) var(--sg-ease-out) backwards;
+}
+
+.sg-error-box {
+  animation: sg-drop-in var(--sg-dur-base) var(--sg-ease-out) 0.1s backwards;
+}
+
+.page-body .empty-icon {
+  animation: sg-scale-in var(--sg-dur-base) var(--sg-ease-out) 0.1s backwards;
+}
+
+/* ---- Chips, badges ------------------------------------------------------- */
+
+.sg-chip,
+.badge {
+  transition: background-color var(--sg-transition),
+    border-color var(--sg-transition), color var(--sg-transition),
+    transform var(--sg-transition), box-shadow var(--sg-transition);
+}
+
+@media (hover: hover) {
+  .sg-chip:hover {
+    border-color: rgba(117, 101, 246, 0.45);
+    color: var(--sg-text);
+  }
+}
+
+/* ---- Progress ------------------------------------------------------------ */
+
+/* The bars are server-rendered at their real width, so they cannot use a
+   width transition on first paint (there is no previous value to transition
+   from). `backwards` keeps the bar collapsed until its delay elapses, and
+   `scaleX` gives the fill-in without re-triggering the width transition. */
+@keyframes sg-bar-in {
+  from { transform: scaleX(0); }
+  to   { transform: scaleX(1); }
+}
+
+.progress-bar {
+  animation: sg-bar-in 0.7s var(--sg-ease) backwards;
+}
+
+/* ---- Modals -------------------------------------------------------------- */
+
+/* Bootstrap/Tabler already slide `.modal-dialog` down by 1rem; this adds a
+   small settle on the sheet itself. No opacity change, so nothing can flash. */
+.modal.show .modal-content {
+  animation: sg-content-in 0.3s var(--sg-ease-out) backwards;
+}
+
+/* ---- Dropdowns ----------------------------------------------------------- */
+
+/* Opacity only on the menu itself: Bootstrap positions it through Popper,
+   and a transform animation would override the inline coordinates it writes. */
+.dropdown-menu {
+  animation: sg-fade-in var(--sg-dur-fast) var(--sg-ease-out) backwards;
+}
+
+.dropdown-menu .dropdown-item,
+.dropdown-menu .dropdown-divider {
+  animation: sg-item-in var(--sg-dur-fast) var(--sg-ease-out) backwards;
+}
+
+/* ---- Toasts -------------------------------------------------------------- */
+
+.toast {
+  transform: translateY(-8px);
+  transition: opacity var(--sg-dur-base) var(--sg-ease-out),
+    transform var(--sg-dur-base) var(--sg-ease-out);
+}
+
+.toast.show {
+  transform: none;
+}
+
+/* ---- Dynamic content (rendered by existing JS) --------------------------- */
+
+/* Manage-members modal tables: rows are replaced wholesale on each render. */
+#mm_members_table_body tr,
+#mm_skills_table_body tr {
+  animation: sg-fade-up var(--sg-dur-base) var(--sg-ease-out) backwards;
+}
+
+/* Recommended-student cards, staggered for the first few only. */
+#mm_recommendations > div {
+  animation: sg-fade-up var(--sg-dur-slow) var(--sg-ease-out) backwards;
+}
+
+#mm_recommendations > div:nth-child(2) { animation-delay: 0.05s; }
+#mm_recommendations > div:nth-child(3) { animation-delay: 0.1s; }
+#mm_recommendations > div:nth-child(4) { animation-delay: 0.15s; }
+#mm_recommendations > div:nth-child(5) { animation-delay: 0.2s; }
+#mm_recommendations > div:nth-child(n + 6) { animation-delay: 0.25s; }
+
+/* ---- Pointer capability --------------------------------------------------- */
+
+/* Lift-on-hover is a mouse affordance; on touch it would otherwise leave a
+   stuck pressed state. Nothing informational is hidden either way. */
+@media (hover: none) {
+  .sg-stat:hover,
+  .sg-group-card:hover,
+  .sg-quick:hover,
+  .sg-rec:hover {
+    transform: none;
+  }
+}
+
+/* ---- Reduced motion ------------------------------------------------------ */
 
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
   *::after {
     animation-duration: 0.001ms !important;
+    animation-delay: 0.001ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
+    transition-delay: 0.001ms !important;
     scroll-behavior: auto !important;
+  }
+
+  /* Hover lifts are motion too. */
+  .sg-stat:hover,
+  .sg-group-card:hover,
+  .sg-quick:hover,
+  .sg-rec:hover {
+    transform: none;
   }
 }
 

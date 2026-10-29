@@ -11,7 +11,7 @@
   </title>
   <link href="{% static 'css/tabler.css' %}" rel="stylesheet" />
   <link href="{% static 'css/tabler-themes.css' %}" rel="stylesheet" />
-  <link href="{% static 'css/app-theme.css' %}?v=4" rel="stylesheet" />
+  <link href="{% static 'css/app-theme.css' %}?v=5" rel="stylesheet" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
   <style>
     @import url("https://rsms.me/inter/inter.css");
@@ -23,7 +23,7 @@
     <div class="sg-auth-wrap">
 
       <!-- Brand -->
-      <div class="sg-auth-brand">
+      <div class="sg-auth-brand sg-animate sg-animate-1">
         <span class="sg-brand-mark"><i class="fa-solid fa-users-gear"></i></span>
         <div>
           <div class="sg-auth-title">Student Group Formation</div>
@@ -32,7 +32,7 @@
       </div>
 
       <!-- Sign in card -->
-      <div class="card sg-auth-card">
+      <div class="card sg-auth-card sg-animate sg-animate-2">
         <div class="card-body">
 
           <h2 class="h4 text-center fw-bold mb-1">Sign in to your account</h2>
@@ -90,7 +90,7 @@
         </div>
       </div>
 
-      <div class="sg-auth-footer">
+      <div class="sg-auth-footer sg-animate sg-animate-3">
         Don't have an account?
         <a href="{% url 'register' %}" class="fw-bold">Register</a>
       </div>
