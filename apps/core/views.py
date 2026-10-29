@@ -36,8 +36,9 @@ def _get_lock_state(request):
         _reset_lock_state(request)
         return 0, None
 
-    if timezone.now() < unlock_time:
-        remaining = int((unlock_time - timezone.now()).total_seconds())
+    now = timezone.now()
+    if now < unlock_time:
+        remaining = max(1, int((unlock_time - now).total_seconds()))
         return failed_attempts, remaining
 
     _reset_lock_state(request)

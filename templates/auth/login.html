@@ -42,12 +42,14 @@
             {% csrf_token %}
 
             {% if messages %}
-            {% for message in messages %}
-            <div id="error-message" class="sg-error-box">
-              <i class="fas fa-circle-exclamation mt-1"></i>
-              <span>{{ message }}</span>
+            <div id="error-message">
+              {% for message in messages %}
+              <div class="sg-error-box">
+                <i class="fas fa-circle-exclamation mt-1"></i>
+                <span>{{ message }}</span>
+              </div>
+              {% endfor %}
             </div>
-            {% endfor %}
             {% endif %}
 
             <div class="sg-auth-field">
@@ -99,7 +101,10 @@
 <script src="{% static 'js/tabler.js' %}" defer></script>
 {% if locked %}
 <script>
-  let remaining = {{ remaining }};
+  let remaining = parseInt("{{ remaining|escapejs }}", 10);
+  if (!Number.isFinite(remaining) || remaining < 0) {
+    remaining = 0;
+  }
   const messageBox = document.getElementById("error-message");
 
   let interval = setInterval(function() {

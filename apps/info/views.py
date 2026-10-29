@@ -16,12 +16,17 @@ MIN_AGE = 1
 MAX_AGE = 150
 
 
-def _parse_age(raw_age):
-    """Convert an age value to an integer, returning None when it is invalid."""
+def _parse_int(raw_value):
+    """Convert a value to an integer, returning None when it is invalid."""
     try:
-        return int(raw_age)
+        return int(raw_value)
     except (TypeError, ValueError):
         return None
+
+
+def _parse_age(raw_age):
+    """Convert an age value to an integer, returning None when it is invalid."""
+    return _parse_int(raw_age)
 
 
 @login_required(login_url='login')
@@ -96,7 +101,10 @@ def info_save_ajax(request):
     info_id = request.POST.get('id')
 
     if info_id:
-        info = scoped_info(request.user, info_id)
+        info_pk = _parse_int(info_id)
+        if info_pk is None:
+            return JsonResponse({'error': 'Invalid info reference.'}, status=400)
+        info = scoped_info(request.user, info_pk)
         is_update = True
     else:
         info = Info()

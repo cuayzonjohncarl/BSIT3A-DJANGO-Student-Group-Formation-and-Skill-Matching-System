@@ -74,7 +74,7 @@
             <td class="text-muted">{{ assignment.skill.skill_name }}</td>
             <td>
               <span class="badge {% if assignment.proficiency_level == 5 %}bg-green-lt text-green{% elif assignment.proficiency_level == 4 %}bg-azure-lt text-azure{% elif assignment.proficiency_level == 3 %}bg-primary-lt text-primary{% else %}bg-secondary-lt text-secondary{% endif %}">
-                {% if assignment.proficiency_level == 5 %}Expert (5){% elif assignment.proficiency_level == 4 %}Advanced (4){% elif assignment.proficiency_level == 3 %}Intermediate (3){% elif assignment.proficiency_level == 2 %}Basic (2){% else %}Beginner (1){% endif %}
+                {% if assignment.proficiency_level == 5 %}Expert (5){% elif assignment.proficiency_level == 4 %}Advanced (4){% elif assignment.proficiency_level == 3 %}Intermediate (3){% elif assignment.proficiency_level == 2 %}Basic (2){% elif assignment.proficiency_level == 1 %}Beginner (1){% else %}Level {{ assignment.proficiency_level }}{% endif %}
               </span>
             </td>
             <td>

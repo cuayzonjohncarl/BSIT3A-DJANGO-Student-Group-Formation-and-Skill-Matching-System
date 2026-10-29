@@ -72,7 +72,7 @@
             <td class="text-muted">{{ requirement.skill.skill_name }}</td>
             <td>
               <span class="badge {% if requirement.required_level == 5 %}bg-green-lt text-green{% elif requirement.required_level == 4 %}bg-azure-lt text-azure{% elif requirement.required_level == 3 %}bg-primary-lt text-primary{% else %}bg-secondary-lt text-secondary{% endif %}">
-                {% if requirement.required_level == 5 %}Expert (5){% elif requirement.required_level == 4 %}Advanced (4){% elif requirement.required_level == 3 %}Intermediate (3){% elif requirement.required_level == 2 %}Basic (2){% else %}Beginner (1){% endif %}
+                {% if requirement.required_level == 5 %}Expert (5){% elif requirement.required_level == 4 %}Advanced (4){% elif requirement.required_level == 3 %}Intermediate (3){% elif requirement.required_level == 2 %}Basic (2){% elif requirement.required_level == 1 %}Beginner (1){% else %}Level {{ requirement.required_level }}{% endif %}
               </span>
             </td>
             <td>

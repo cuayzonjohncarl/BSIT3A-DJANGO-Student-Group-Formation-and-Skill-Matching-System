@@ -146,7 +146,10 @@ def student_save_ajax(request):
     student_id = request.POST.get('student_id')
 
     if student_id:
-        student = get_object_or_404(Student, pk=student_id)
+        student_pk = _parse_int(student_id)
+        if student_pk is None:
+            return JsonResponse({'error': 'Invalid student reference.'}, status=400)
+        student = get_object_or_404(Student, pk=student_pk)
         is_update = True
     else:
         student = Student()

@@ -13,6 +13,13 @@ def _is_superuser(user):
     return user.is_superuser
 
 
+def _parse_int(raw_value):
+    try:
+        return int(raw_value)
+    except (TypeError, ValueError):
+        return None
+
+
 # PAGE
 @login_required(login_url='login')
 @user_passes_test(_is_superuser, login_url='dashboard')
@@ -91,7 +98,10 @@ def user_save_ajax(request):
     user_id = request.POST.get("id")
 
     if user_id:
-        user = get_object_or_404(User, pk=user_id)
+        user_pk = _parse_int(user_id)
+        if user_pk is None:
+            return JsonResponse({"error": "Invalid user reference."}, status=400)
+        user = get_object_or_404(User, pk=user_pk)
         is_update = True
     else:
         user = User()
