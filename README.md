@@ -282,12 +282,6 @@ Known limitations of the current implementation:
 - Course/section aware formation constraints and project-specific group sizes.
 - Deployment hardening: `DJANGO_SECRET_KEY`, HTTPS, and a production WSGI server.
 
-## Documentation
-
-The formal academic concept paper is maintained separately in the `documentation` folder.
-
-For further information about the project's background, objectives, significance, scope, and limitations, refer to the concept paper included in the repository.
-
 ## Project Status
 
 **Status:** Core functional requirements implemented and verified (137 automated tests passing), UI/UX refinement in progress.
