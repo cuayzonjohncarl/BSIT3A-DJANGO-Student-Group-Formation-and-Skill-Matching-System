@@ -6,9 +6,12 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
+from django.db.models import Count
 from django.shortcuts import redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
+
+from apps.core.roles import ROLE_GROUPS, ROLE_STUDENT
 
 User = get_user_model()
 
@@ -147,7 +150,9 @@ def home(request):
         Project,
         Group,
         ProjectRequiredSkill,
+        StudentSkill,
     )
+    from apps.students.matching import PROFICIENCY_LABELS
     from apps.students.views import _analyze_group_skills
 
     total_students = Student.objects.count()
@@ -169,7 +174,8 @@ def home(request):
     full_match_groups = 0
     match_sum = 0
     groups_with_requirements = 0
-    for group in Group.objects.select_related('project'):
+    group_match_series = []
+    for group in Group.objects.select_related('project').order_by('group_name'):
         analysis = _analyze_group_skills(group)
         satisfied_total += analysis['satisfied_count']
         deficient_total += analysis['deficient_count']
@@ -180,6 +186,11 @@ def home(request):
             match_sum += analysis['match_percentage']
             if analysis['match_percentage'] == 100:
                 full_match_groups += 1
+            group_match_series.append({
+                'label': group.group_name,
+                'value': analysis['match_percentage'],
+            })
+    group_match_series = group_match_series[:8]
 
     coverage_pct = (
         round((satisfied_total / checks_total) * 100) if checks_total else None
@@ -197,6 +208,39 @@ def home(request):
             'analysis': _analyze_group_skills(g),
         })
 
+    # Chart series: every number below is a direct database aggregate.
+    proficiency_counts = {
+        row['proficiency_level']: row['total']
+        for row in StudentSkill.objects.values('proficiency_level').annotate(
+            total=Count('student_skill_id')
+        )
+    }
+    proficiency_chart = [
+        {
+            'label': PROFICIENCY_LABELS[level],
+            'count': proficiency_counts.get(level, 0),
+        }
+        for level in sorted(PROFICIENCY_LABELS)
+    ]
+
+    requirement_status_chart = [
+        {'label': 'Satisfied', 'value': satisfied_total},
+        {'label': 'Deficient', 'value': deficient_total},
+        {'label': 'Missing', 'value': missing_total},
+    ]
+
+    # ``order_by()`` first: the model's default ordering would otherwise be
+    # added to the GROUP BY and split every course into per-student rows.
+    course_chart = [
+        {'label': row['course'] or 'Unspecified', 'value': row['total']}
+        for row in (
+            Student.objects.values('course')
+            .order_by()
+            .annotate(total=Count('student_id'))
+            .order_by('-total', 'course')[:6]
+        )
+    ]
+
     return render(request, 'home.html', {
         'total_students': total_students,
         'total_skills': total_skills,
@@ -213,6 +257,10 @@ def home(request):
         'coverage_pct': coverage_pct,
         'avg_match_pct': avg_match_pct,
         'analyzed_recent': analyzed_recent,
+        'proficiency_chart': proficiency_chart,
+        'requirement_status_chart': requirement_status_chart,
+        'group_match_series': group_match_series,
+        'course_chart': course_chart,
     })
 
 
@@ -244,5 +292,12 @@ def register_view(request):
         email=form_data['email'].strip(),
         password=form_data['password'],
     )
+
+    # New self-registered accounts start as Students. Instructors and
+    # Administrators are promoted by an administrator on the Users page.
+    from django.contrib.auth.models import Group
+    role_group, _created = Group.objects.get_or_create(name=ROLE_GROUPS[ROLE_STUDENT])
+    user.groups.add(role_group)
+
     login(request, user)
     return redirect('dashboard')

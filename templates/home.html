@@ -1,4 +1,5 @@
 {% extends "theme/base.html" %}
+{% load static %}
 {% block title %}Dashboard - Student Group Formation and Skill Matching System{% endblock %}
 {% block topbar_title %}Dashboard{% endblock %}
 {% block content %}
@@ -147,7 +148,7 @@
                 <td>
                   <div class="d-flex align-items-center gap-2">
                     <div class="progress progress-sm flex-grow-1" style="min-width: 80px;">
-                      <div class="progress-bar {% if item.analysis.match_percentage == 100 %}bg-success{% elif item.analysis.match_percentage >= 50 %}bg-warning{% else %}bg-danger{% endif %}" style="width: {{ item.analysis.match_percentage }}%"></div>
+                      <div class="progress-bar {% if item.analysis.match_percentage == 100 %}bg-success{% elif item.analysis.match_percentage >= 50 %}bg-warning{% else %}bg-danger{% endif %}" data-sg-width="{{ item.analysis.match_percentage }}%"></div>
                     </div>
                     <span class="fw-semibold" style="min-width: 2.6rem; text-align: right;">{{ item.analysis.match_percentage }}%</span>
                   </div>
@@ -209,7 +210,7 @@
               <span class="sg-match-hero-value">{{ coverage_pct }}%</span>
             </div>
             <div class="progress progress-sm">
-              <div class="progress-bar bg-primary" style="width: {{ coverage_pct }}%"></div>
+              <div class="progress-bar bg-primary" data-sg-width="{{ coverage_pct }}%"></div>
             </div>
             <div class="text-muted small mt-2">
               {{ satisfied_total }} of {{ checks_total }} required-skill checks met
@@ -274,6 +275,86 @@
     </div>
   </div>
 
+  <!-- Analytics charts: series are computed from the database in the view -->
+  {{ proficiency_chart|json_script:"chart-proficiency-data" }}
+  {{ requirement_status_chart|json_script:"chart-requirement-data" }}
+  {{ course_chart|json_script:"chart-course-data" }}
+  {{ group_match_series|json_script:"chart-group-data" }}
+  <div class="row row-cards g-3 mb-4">
+    <div class="col-lg-6">
+      <div class="card h-100 sg-animate sg-animate-11">
+        <div class="card-header">
+          <div class="d-flex align-items-center gap-2">
+            <span class="sg-panel-accent" style="background: var(--sg-violet-soft); color: var(--sg-violet); border-color: rgba(117,101,246,.32);"><i class="fas fa-chart-column"></i></span>
+            <div>
+              <div class="card-title mb-0">Proficiency Distribution</div>
+              <div class="sg-panel-sub">Recorded student-skill levels across the catalog</div>
+            </div>
+          </div>
+        </div>
+        <div class="card-body">
+          <div id="chartProficiency" class="sg-chart" role="img" aria-label="Bar chart of proficiency levels 1 to 5"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-3">
+      <div class="card h-100 sg-animate sg-animate-12">
+        <div class="card-header">
+          <div class="d-flex align-items-center gap-2">
+            <span class="sg-panel-accent" style="background: var(--sg-teal-soft); color: var(--sg-teal); border-color: rgba(54,214,176,.3);"><i class="fas fa-chart-pie"></i></span>
+            <div>
+              <div class="card-title mb-0">Requirement Status</div>
+              <div class="sg-panel-sub">Across all formed groups</div>
+            </div>
+          </div>
+        </div>
+        <div class="card-body">
+          <div id="chartRequirement" class="sg-chart" role="img" aria-label="Donut chart of requirement status"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-3">
+      <div class="card h-100 sg-animate sg-animate-13">
+        <div class="card-header">
+          <div class="d-flex align-items-center gap-2">
+            <span class="sg-panel-accent" style="background: var(--sg-cyan-soft); color: var(--sg-cyan); border-color: rgba(56,207,240,.3);"><i class="fas fa-graduation-cap"></i></span>
+            <div>
+              <div class="card-title mb-0">Students by Course</div>
+              <div class="sg-panel-sub">Directory composition</div>
+            </div>
+          </div>
+        </div>
+        <div class="card-body">
+          <div id="chartCourse" class="sg-chart" role="img" aria-label="Donut chart of students per course"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {% if group_match_series %}
+  <div class="row row-cards g-3 mb-4">
+    <div class="col-12">
+      <div class="card sg-animate sg-animate-14">
+        <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+          <div class="d-flex align-items-center gap-2">
+            <span class="sg-panel-accent" style="background: var(--sg-amber-soft); color: var(--sg-amber); border-color: rgba(255,200,87,.3);"><i class="fas fa-chart-bar"></i></span>
+            <div>
+              <div class="card-title mb-0">Group Compatibility</div>
+              <div class="sg-panel-sub">Requirements satisfied per group</div>
+            </div>
+          </div>
+          <a href="{% url 'students:group_list' %}" class="btn btn-sm btn-outline-primary">Open groups <i class="fas fa-arrow-right ms-1"></i></a>
+        </div>
+        <div class="card-body">
+          <div id="chartGroups" class="sg-chart sg-chart--tall" role="img" aria-label="Bar chart of compatibility percentage per group"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
   <!-- Quick navigation to existing destinations -->
   <div class="row row-cards g-3">
     <div class="col-6 col-lg-3">
@@ -315,4 +396,164 @@
   </div>
 
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'libs/apexcharts/dist/apexcharts.min.js' %}"></script>
+<script>
+(function () {
+  if (typeof ApexCharts === 'undefined') return;
+
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const readSeries = function (id) {
+    const el = document.getElementById(id);
+    if (!el) return null;
+    try { return JSON.parse(el.textContent); } catch (e) { return null; }
+  };
+
+  const styles = getComputedStyle(document.documentElement);
+  const muted = (styles.getPropertyValue('--sg-text-2') || '#9299ad').trim();
+  const gridColor = 'rgba(148, 163, 184, 0.14)';
+
+  const base = {
+    theme: { mode: 'dark' },
+    chart: {
+      toolbar: { show: false },
+      animations: { enabled: !reduceMotion, easing: 'easeout', speed: 650 },
+      background: 'transparent',
+      fontFamily: 'inherit',
+      offsetX: 0
+    },
+    grid: { borderColor: gridColor, strokeDashArray: 4, padding: { left: 6, right: 6 } },
+    dataLabels: { enabled: false },
+    tooltip: { theme: 'dark' },
+    legend: { labels: { colors: muted } }
+  };
+
+  const axisLabels = { style: { colors: [muted], fontSize: '11px' } };
+
+  const emptyNote = function (target, message) {
+    const el = document.querySelector(target);
+    if (!el) return;
+    el.innerHTML = '<div class="sg-rec-empty text-center py-4"><i class="fas fa-chart-simple fa-lg d-block mb-2" style="color: var(--sg-text-3);"></i>' + message + '</div>';
+  };
+
+  // 1. Proficiency distribution -------------------------------------------
+  const proficiency = readSeries('chart-proficiency-data') || [];
+  const proficiencyTotal = proficiency.reduce((sum, item) => sum + item.count, 0);
+  if (proficiencyTotal > 0) {
+    new ApexCharts(document.querySelector('#chartProficiency'), {
+      ...base,
+      chart: { ...base.chart, type: 'bar', height: 268 },
+      series: [{ name: 'Assignments', data: proficiency.map(item => item.count) }],
+      colors: ['#697187', '#38cff0', '#7565f6', '#36d6b0', '#ffc857'],
+      plotOptions: {
+        bar: {
+          borderRadius: 6,
+          columnWidth: '52%',
+          distributed: true
+        }
+      },
+      fill: { type: 'solid' },
+      xaxis: {
+        categories: proficiency.map(item => item.label),
+        labels: axisLabels,
+        axisBorder: { show: false },
+        axisTicks: { show: false }
+      },
+      yaxis: {
+        labels: { ...axisLabels, formatter: function (v) { return Math.round(v); } },
+        forceNiceScale: true
+      },
+      states: { hover: { filter: { type: 'darken', value: 0.75 } } },
+      markers: { size: 0 }
+    }).render();
+  } else {
+    emptyNote('#chartProficiency', 'No skill proficiencies recorded yet.');
+  }
+
+  // 2. Requirement status donut -------------------------------------------
+  const status = (readSeries('chart-requirement-data') || []).filter(item => item.value > 0);
+  if (status.length) {
+    new ApexCharts(document.querySelector('#chartRequirement'), {
+      ...base,
+      chart: { ...base.chart, type: 'donut', height: 268 },
+      series: status.map(item => item.value),
+      labels: status.map(item => item.label),
+      colors: ['#32d6a0', '#ffc857', '#ff777f'],
+      stroke: { width: 0 },
+      dataLabels: {
+        enabled: true,
+        formatter: function (value) { return Math.round(value) + '%'; },
+        style: { fontSize: '11px' },
+        dropShadow: { enabled: false }
+      },
+      legend: { position: 'bottom', labels: { colors: muted } },
+      plotOptions: { pie: { donut: { size: '68%', labels: { show: false } } } }
+    }).render();
+  } else {
+    emptyNote('#chartRequirement', 'Define project requirements to see coverage here.');
+  }
+
+  // 3. Students by course --------------------------------------------------
+  const courses = readSeries('chart-course-data') || [];
+  if (courses.length) {
+    new ApexCharts(document.querySelector('#chartCourse'), {
+      ...base,
+      chart: { ...base.chart, type: 'donut', height: 268 },
+      series: courses.map(item => item.value),
+      labels: courses.map(item => item.label),
+      colors: ['#38cff0', '#7565f6', '#36d6b0', '#ffc857', '#ff777f', '#8f97ad'],
+      stroke: { width: 0 },
+      dataLabels: {
+        enabled: true,
+        formatter: function (value) { return Math.round(value) + '%'; },
+        style: { fontSize: '11px' },
+        dropShadow: { enabled: false }
+      },
+      legend: { position: 'bottom', labels: { colors: muted } },
+      plotOptions: { pie: { donut: { size: '68%', labels: { show: false } } } }
+    }).render();
+  } else {
+    emptyNote('#chartCourse', 'No students in the directory yet.');
+  }
+
+  // 4. Group compatibility -------------------------------------------------
+  const groups = readSeries('chart-group-data') || [];
+  const groupTarget = document.querySelector('#chartGroups');
+  if (groupTarget && groups.length) {
+    new ApexCharts(groupTarget, {
+      ...base,
+      chart: { ...base.chart, type: 'bar', height: Math.max(220, groups.length * 46 + 60) },
+      series: [{ name: 'Compatibility', data: groups.map(item => item.value) }],
+      colors: ['#7565f6'],
+      plotOptions: {
+        bar: {
+          horizontal: true,
+          borderRadius: 5,
+          barHeight: '58%'
+        }
+      },
+      dataLabels: {
+        enabled: true,
+        formatter: function (value) { return Math.round(value) + '%'; },
+        style: { colors: ['#f4f5fa'], fontSize: '11px', fontWeight: 600 },
+        offsetX: 6
+      },
+      xaxis: {
+        categories: groups.map(item => item.label),
+        labels: { ...axisLabels, formatter: function (v) { return Math.round(v) + '%'; } },
+        min: 0,
+        max: 100,
+        axisBorder: { show: false },
+        axisTicks: { show: false }
+      },
+      yaxis: { labels: axisLabels },
+      grid: { borderColor: gridColor, strokeDashArray: 4, xaxis: { lines: { show: true } } },
+      states: { hover: { filter: { type: 'darken', value: 0.75 } } },
+      markers: { size: 0 }
+    }).render();
+  }
+})();
+</script>
 {% endblock %}

@@ -1,0 +1,285 @@
+{% extends "theme/base.html" %}
+{% block title %}Skill Matching - Student Group Formation and Skill Matching System{% endblock %}
+{% block topbar_title %}Skill Matching{% endblock %}
+{% block content %}
+<div class="container-xl pt-3 pb-4">
+
+  <!-- Page header -->
+  <div class="page-header d-print-none mb-4" aria-label="Page header">
+    <div class="row align-items-center g-3">
+      <div class="col">
+        <div class="page-pretitle">Matching</div>
+        <h2 class="page-title mb-1">Skill Matching Engine</h2>
+        <div class="sg-page-desc">
+          Compatibility index between every student's skill inventory and the selected project's requirement matrix.
+        </div>
+      </div>
+      <div class="col-auto ms-auto d-print-none">
+        <form method="GET" class="d-flex gap-2 align-items-center">
+          <select name="project" class="form-select" style="min-width: 240px;" onchange="this.form.submit()" aria-label="Select project">
+            {% for p in projects %}
+            <option value="{{ p.project_id }}" {% if selected_project and p.project_id == selected_project.project_id %}selected{% endif %}>{{ p.project_name }}</option>
+            {% endfor %}
+          </select>
+          <button type="submit" class="btn btn-outline-primary">Analyze</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  {% if not projects %}
+  <div class="card sg-animate">
+    <div class="empty py-5">
+      <div class="empty-icon"><i class="fas fa-briefcase"></i></div>
+      <p class="empty-title">No projects defined yet</p>
+      <p class="empty-subtitle">Create a project and assign its required skills before running the matching engine.</p>
+      <div class="empty-action mt-3">
+        <a href="{% url 'students:project_list' %}" class="btn btn-primary"><i class="fas fa-plus me-1"></i> Add a project</a>
+      </div>
+    </div>
+  </div>
+  {% elif not requirements %}
+  <div class="card sg-animate">
+    <div class="empty py-5">
+      <div class="empty-icon"><i class="fas fa-check-double"></i></div>
+      <p class="empty-title">No required skills for this project</p>
+      <p class="empty-subtitle">The engine needs a requirement matrix to score students against.</p>
+      <div class="empty-action mt-3">
+        <a href="{% url 'students:project_skill_list' %}" class="btn btn-primary"><i class="fas fa-plus me-1"></i> Define required skills</a>
+      </div>
+    </div>
+  </div>
+  {% else %}
+
+  <!-- Summary -->
+  <div class="row row-cards g-3 mb-4">
+    <div class="col-6 col-xl-3">
+      <div class="card sg-stat sg-stat--violet sg-animate sg-animate-1">
+        <div class="card-body">
+          <div class="sg-stat-top"><span class="sg-stat-icon"><i class="fas fa-user-graduate"></i></span></div>
+          <div class="sg-stat-label">Students scored</div>
+          <div class="sg-stat-value">{{ summary.student_count }}</div>
+          <div class="sg-stat-note"><i class="fas fa-circle"></i> {{ summary.requirement_count }} requirement{{ summary.requirement_count|pluralize }} evaluated</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-xl-3">
+      <div class="card sg-stat sg-stat--cyan sg-animate sg-animate-2">
+        <div class="card-body">
+          <div class="sg-stat-top"><span class="sg-stat-icon"><i class="fas fa-scale-balanced"></i></span></div>
+          <div class="sg-stat-label">Average index</div>
+          <div class="sg-stat-value">{% if summary.average_score is not None %}{{ summary.average_score }}%{% else %}&mdash;{% endif %}</div>
+          <div class="sg-stat-note"><i class="fas fa-circle"></i> weighted by required level</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-xl-3">
+      <div class="card sg-stat sg-stat--teal sg-animate sg-animate-3">
+        <div class="card-body">
+          <div class="sg-stat-top"><span class="sg-stat-icon"><i class="fas fa-circle-check"></i></span></div>
+          <div class="sg-stat-label">Fully matched</div>
+          <div class="sg-stat-value">{{ summary.fully_matched }}</div>
+          <div class="sg-stat-note"><i class="fas fa-circle"></i> meet every requirement</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-xl-3">
+      <div class="card sg-stat sg-stat--coral sg-animate sg-animate-4">
+        <div class="card-body">
+          <div class="sg-stat-top"><span class="sg-stat-icon"><i class="fas fa-triangle-exclamation"></i></span></div>
+          <div class="sg-stat-label">Missing skills</div>
+          <div class="sg-stat-value">{{ summary.with_missing }}</div>
+          <div class="sg-stat-note"><i class="fas fa-circle"></i> student(s) with unrecorded requirements</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Requirement matrix -->
+  <div class="card mb-4 sg-animate sg-animate-5">
+    <div class="card-header">
+      <div class="d-flex align-items-center gap-2">
+        <span class="sg-panel-accent"><i class="fas fa-list-check"></i></span>
+        <div>
+          <div class="card-title mb-0">Requirement Matrix</div>
+          <div class="sg-panel-sub">{{ selected_project.project_name }} &mdash; minimum proficiency per skill</div>
+        </div>
+      </div>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-hover card-table">
+        <thead>
+          <tr>
+            <th style="min-width: 180px;">Required skill</th>
+            <th>Minimum level</th>
+            <th>Students meeting it</th>
+            <th style="min-width: 140px;">Coverage</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for req in requirements %}
+          <tr>
+            <td class="fw-semibold">{{ req.skill_name }}</td>
+            <td><span class="sg-tag sg-tag-muted">Level {{ req.required_level }}</span></td>
+            <td>
+              <span class="fw-semibold">{{ req.met_count }}</span>
+              <span class="text-muted">/ {{ summary.student_count }} met</span>
+              {% if req.deficient_count %}<span class="sg-tag sg-tag-gap ms-1">{{ req.deficient_count }} low</span>{% endif %}
+              {% if req.missing_count %}<span class="sg-tag sg-tag-missing ms-1">{{ req.missing_count }} missing</span>{% endif %}
+            </td>
+            <td>
+              <div class="d-flex align-items-center gap-2">
+                <div class="progress progress-sm flex-grow-1" style="min-width: 80px;">
+                  <div class="progress-bar {% if req.coverage_pct == 100 %}bg-success{% elif req.coverage_pct >= 50 %}bg-warning{% else %}bg-danger{% endif %}" data-sg-width="{{ req.coverage_pct }}%" role="progressbar" aria-valuenow="{{ req.coverage_pct }}" aria-valuemin="0" aria-valuemax="100"></div>
+                </div>
+                <span class="fw-semibold" style="min-width: 3rem; text-align: right;">{{ req.coverage_pct }}%</span>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Compatibility table -->
+  <div class="card sg-animate sg-animate-6">
+    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+      <div class="d-flex align-items-center gap-2">
+        <span class="sg-panel-accent" style="background: var(--sg-teal-soft); color: var(--sg-teal); border-color: rgba(54,214,176,.3);"><i class="fas fa-chart-simple"></i></span>
+        <div>
+          <div class="card-title mb-0">Compatibility Index</div>
+          <div class="sg-panel-sub">Best match first &mdash; every score is reproducible from the recorded levels</div>
+        </div>
+      </div>
+      <span class="badge bg-primary-lt text-primary">{{ results|length }} student{{ results|length|pluralize }}</span>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-hover card-table">
+        <thead>
+          <tr>
+            <th style="width: 40px;">#</th>
+            <th style="min-width: 190px;">Student</th>
+            <th>Course &amp; section</th>
+            <th style="min-width: 190px;">Compatibility</th>
+            <th>Requirements</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in results %}
+          <tr>
+            <td class="text-muted">{{ forloop.counter }}</td>
+            <td>
+              <div class="fw-semibold">{{ r.name }}</div>
+              <div class="text-muted small">{{ r.student_number }}</div>
+            </td>
+            <td class="text-muted">
+              {{ r.course }} {{ r.section }}
+              {% if r.year_level %}<span class="ms-1 text-muted">&middot; {{ r.year_level|floatformat:0 }}{% if r.year_level == 1 %}st{% elif r.year_level == 2 %}nd{% elif r.year_level == 3 %}rd{% else %}th{% endif %} yr</span>{% endif %}
+            </td>
+            <td>
+              <div class="d-flex align-items-center gap-2">
+                <div class="progress progress-sm flex-grow-1" style="min-width: 90px;">
+                  <div class="progress-bar {% if r.score == 100 %}bg-success{% elif r.score >= 50 %}bg-warning{% else %}bg-danger{% endif %} sg-bar" data-sg-width="{{ r.score }}%" role="progressbar" aria-valuenow="{{ r.score }}" aria-valuemin="0" aria-valuemax="100"></div>
+                </div>
+                <span class="fw-semibold" style="min-width: 3rem; text-align: right;">{{ r.score }}%</span>
+              </div>
+            </td>
+            <td>
+              <span class="sg-tag sg-tag-ok">{{ r.met_count }} met</span>
+              {% if r.deficient_count %}<span class="sg-tag sg-tag-gap">{{ r.deficient_count }} low</span>{% endif %}
+              {% if r.missing_count %}<span class="sg-tag sg-tag-missing">{{ r.missing_count }} missing</span>{% endif %}
+            </td>
+            <td>
+              {% if r.assigned %}
+              <span class="badge bg-primary-lt text-primary"><i class="fas fa-people-group me-1"></i>In a group</span>
+              {% else %}
+              <span class="badge bg-secondary-lt text-secondary">Unassigned</span>
+              {% endif %}
+              <button type="button"
+                      class="sg-why-btn"
+                      aria-expanded="false"
+                      aria-controls="why-{{ forloop.counter }}">
+                Why {{ r.score }}%
+              </button>
+            </td>
+          </tr>
+          <!-- Full-width breakdown row: keeps the explanation readable instead of
+               squeezing it into the narrow Status column. -->
+          <tr class="sg-why-row" id="why-{{ forloop.counter }}" hidden>
+            <td colspan="6">
+              <div class="sg-why-panel">
+                <div class="sg-why-head">
+                  <span class="sg-why-head-icon"><i class="fas fa-magnifying-glass-chart"></i></span>
+                  <div class="min-w-0">
+                    <div class="sg-why-title">Score breakdown &mdash; {{ r.name }}</div>
+                    <div class="sg-why-sub">{{ r.explanation }}</div>
+                  </div>
+                  <span class="badge bg-primary-lt text-primary ms-auto">{{ r.score }}% index</span>
+                </div>
+                <ul class="sg-why-list mb-0">
+                  {% for d in r.details %}
+                  <li class="sg-why-item">
+                    <span class="sg-why-skill">{{ d.skill_name }}</span>
+                    {% if d.status == 'met' %}<span class="sg-tag sg-tag-ok">met</span>{% elif d.status == 'deficient' %}<span class="sg-tag sg-tag-gap">short by {{ d.gap }}</span>{% else %}<span class="sg-tag sg-tag-missing">missing</span>{% endif %}
+                    <span class="sg-why-meta">required {{ d.required_label }} &middot; has {{ d.have_label }}</span>
+                    <span class="sg-why-points">{{ d.contribution|floatformat:1 }}/{{ d.required_level }} pts</span>
+                  </li>
+                  {% empty %}
+                  <li class="sg-why-item text-muted">This project has no required skills, so there is nothing to score.</li>
+                  {% endfor %}
+                </ul>
+                <p class="sg-why-formula mb-0">
+                  Index = &Sigma;(required level &times; achievement) &divide; &Sigma;(required level), where achievement is
+                  min(student level &divide; required level, 1). Over-qualification never inflates a score above 100%.
+                </p>
+              </div>
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="6">
+              <div class="empty py-4">
+                <div class="empty-icon"><i class="fas fa-user-graduate"></i></div>
+                <p class="empty-title">No students to score</p>
+                <p class="empty-subtitle">Add students to the directory to see compatibility results.</p>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  {% endif %}
+</div>
+
+<noscript>
+  <style>
+    /* Without JavaScript the toggle cannot work, so every breakdown row is
+       simply left open. */
+    .sg-why-row[hidden] { display: table-row !important; }
+    .sg-why-btn { display: none !important; }
+  </style>
+</noscript>
+{% endblock %}
+
+{% block extra_js %}
+{{ block.super }}
+<script>
+  (function () {
+    var buttons = document.querySelectorAll('.sg-why-btn');
+    buttons.forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var row = document.getElementById(btn.getAttribute('aria-controls'));
+        if (!row) return;
+        var open = btn.getAttribute('aria-expanded') === 'true';
+        btn.setAttribute('aria-expanded', open ? 'false' : 'true');
+        row.hidden = open;
+      });
+    });
+  })();
+</script>
+{% endblock %}

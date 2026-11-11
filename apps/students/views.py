@@ -9,6 +9,22 @@ from django.core.validators import validate_email
 from django.db import IntegrityError
 from django.db.models import Q
 
+from apps.core.roles import manager_required
+
+from .group_formation import (
+    MAX_GROUP_MEMBERS,
+    plan_groups,
+    save_plan,
+)
+from .matching import (
+    analyze_group_skills,
+    match_students_to_project,
+    proficiency_label,
+    proficiency_scale_text,
+    project_requirements,
+    recommend_candidates,
+    skill_index_for_students,
+)
 from .models import (
     Skill,
     Student,
@@ -139,7 +155,7 @@ def student_get_ajax(request, pk):
     return JsonResponse(_student_data(student))
 
 
-@login_required(login_url='login')
+@manager_required
 @require_POST
 def student_save_ajax(request):
     """Validate and create or update a student record, returning its data as JSON."""
@@ -236,7 +252,7 @@ def student_save_ajax(request):
     return JsonResponse(payload)
 
 
-@login_required(login_url='login')
+@manager_required
 @require_POST
 def student_delete_ajax(request, pk):
     """Delete the specified student record and confirm as JSON."""
@@ -325,7 +341,7 @@ def skill_get_ajax(request, pk):
     return JsonResponse(_skill_data(skill))
 
 
-@login_required(login_url='login')
+@manager_required
 @require_POST
 def skill_save_ajax(request):
     """Validate and create or update a skill record, returning its data as JSON."""
@@ -380,7 +396,7 @@ def skill_save_ajax(request):
     return JsonResponse(payload)
 
 
-@login_required(login_url='login')
+@manager_required
 @require_POST
 def skill_delete_ajax(request, pk):
     """Delete the specified skill record and confirm as JSON."""
@@ -415,9 +431,7 @@ def skill_delete_ajax(request, pk):
 
 MIN_PROFICIENCY_LEVEL = 1
 MAX_PROFICIENCY_LEVEL = 5
-PROFICIENCY_LEVEL_SCALE = (
-    '1 = Beginner, 2 = Basic, 3 = Intermediate, 4 = Advanced, 5 = Expert'
-)
+PROFICIENCY_LEVEL_SCALE = proficiency_scale_text()
 
 
 def _parse_proficiency(raw_value):
@@ -509,7 +523,7 @@ def student_skill_get_ajax(request, pk):
     return JsonResponse(_student_skill_data(assignment))
 
 
-@login_required(login_url='login')
+@manager_required
 @require_POST
 def student_skill_save_ajax(request):
     """Validate and create or update a student-skill assignment as JSON."""
@@ -599,7 +613,7 @@ def student_skill_save_ajax(request):
     return JsonResponse(payload)
 
 
-@login_required(login_url='login')
+@manager_required
 @require_POST
 def student_skill_delete_ajax(request, pk):
     """Delete the specified student-skill assignment and confirm as JSON."""
@@ -686,7 +700,7 @@ def project_get_ajax(request, pk):
     return JsonResponse(_project_data(project))
 
 
-@login_required(login_url='login')
+@manager_required
 @require_POST
 def project_save_ajax(request):
     """Validate and create or update a project record, returning its data as JSON."""
@@ -739,7 +753,7 @@ def project_save_ajax(request):
     return JsonResponse(payload)
 
 
-@login_required(login_url='login')
+@manager_required
 @require_POST
 def project_delete_ajax(request, pk):
     """Delete the specified project record and confirm as JSON."""
@@ -842,7 +856,7 @@ def project_skill_get_ajax(request, pk):
     return JsonResponse(_project_skill_data(requirement))
 
 
-@login_required(login_url='login')
+@manager_required
 @require_POST
 def project_skill_save_ajax(request):
     """Validate and create or update a project-skill requirement as JSON."""
@@ -930,7 +944,7 @@ def project_skill_save_ajax(request):
     return JsonResponse(payload)
 
 
-@login_required(login_url='login')
+@manager_required
 @require_POST
 def project_skill_delete_ajax(request, pk):
     """Delete the specified project-skill requirement and confirm as JSON."""
@@ -948,175 +962,40 @@ def project_skill_delete_ajax(request, pk):
 
 # ---------------------------------------------------------------------------
 # Group Formation, Membership & Skill Matching / Gap Analysis Engine
+#
+# ``MAX_GROUP_MEMBERS`` comes from ``apps.students.group_formation``; the
+# matching, gap-analysis and recommendation logic lives in
+# ``apps.students.matching``. This module keeps the HTTP layer.
 # ---------------------------------------------------------------------------
-
-MAX_GROUP_MEMBERS = 5
 
 
 def _student_skill_index_for_students(student_list):
-    """Build a map of student_id -> {skill_id: max proficiency} for given students."""
-    student_ids = [s.student_id for s in student_list]
-    index = {sid: {} for sid in student_ids}
-    if not student_ids:
-        return index
-    for ss in StudentSkill.objects.filter(student_id__in=student_ids).select_related('skill'):
-        sid = ss.student_id
-        sk = ss.skill_id
-        if sk not in index[sid] or ss.proficiency_level > index[sid][sk]:
-            index[sid][sk] = ss.proficiency_level
-    return index
+    """Build a map of student_id -> {skill_id: max proficiency} for given students.
+
+    The implementation lives in :mod:`apps.students.matching`; the wrapper
+    keeps the existing view/test imports working.
+    """
+    return skill_index_for_students(student_list)
 
 
 def _recommend_students_for_group(group, limit=10):
-    """Recommend students not yet assigned to any group for this project.
-    Score by coverage of project's required skills (weighted by requirement level).
+    """Recommend students that would close this group's outstanding skill gaps.
+
+    Delegates to :func:`apps.students.matching.recommend_candidates`, which
+    ranks candidates by the weighted share of the group's remaining deficit
+    they would fill and explains every suggestion.
     """
-    project = group.project
-    required = list(
-        ProjectRequiredSkill.objects.filter(project=project).select_related('skill')
-    )
-    if not required:
-        return []
-
-    assigned_ids = set(
-        GroupMember.objects.filter(group__project=project).values_list('student_id', flat=True)
-    )
-    candidates = Student.objects.exclude(student_id__in=assigned_ids).order_by('last_name', 'first_name')
-    skill_index = _student_skill_index_for_students(candidates)
-
-    recommendations = []
-    for student in candidates:
-        student_skills = skill_index.get(student.student_id, {})
-        covered = 0
-        total_req = len(required)
-        missing_list = []
-        met_list = []
-        score_total = 0
-        for req in required:
-            req_level = req.required_level or 0
-            have = student_skills.get(req.skill_id, 0)
-            if have >= req_level and req_level > 0:
-                covered += 1
-                met_list.append({
-                    'skill_name': req.skill.skill_name,
-                    'required': req_level,
-                    'have': have,
-                })
-                score_total += req_level
-            else:
-                missing_list.append({
-                    'skill_name': req.skill.skill_name,
-                    'required': req_level,
-                    'have': have,
-                })
-        coverage_pct = round((covered / total_req) * 100) if total_req else 0
-        recommendations.append({
-            'student_id': student.student_id,
-            'student_number': student.student_number,
-            'name': f"{student.last_name}, {student.first_name}",
-            'course': student.course,
-            'section': student.section,
-            'year_level': student.year_level,
-            'coverage_pct': coverage_pct,
-            'covered_count': covered,
-            'total_required': total_req,
-            'met': met_list,
-            'missing': missing_list,
-            'score': score_total,
-        })
-
-    recommendations.sort(key=lambda x: (x['coverage_pct'], x['score'], x['name']), reverse=True)
-    return recommendations[:limit]
+    return recommend_candidates(group, limit=limit)
 
 
 def _analyze_group_skills(group):
-    """Calculate compatibility score, satisfied skills, and skill gaps for a group."""
-    required_skills = list(
-        ProjectRequiredSkill.objects.filter(project_id=group.project_id)
-        .select_related('skill')
-        .order_by('skill__skill_name')
-    )
-    memberships = list(
-        GroupMember.objects.filter(group_id=group.group_id)
-        .select_related('student')
-        .order_by('student__last_name', 'student__first_name')
-    )
-    member_students = [m.student for m in memberships]
+    """Skill-gap analysis for a group (delegates to the matching engine).
 
-    # Map student skills in this group: {skill_id: [StudentSkill, ...]}
-    skill_map = {}
-    if member_students:
-        student_skills = StudentSkill.objects.filter(
-            student__in=member_students
-        ).select_related('student', 'skill')
-        for ss in student_skills:
-            if ss.skill_id not in skill_map:
-                skill_map[ss.skill_id] = []
-            skill_map[ss.skill_id].append(ss)
-
-    details = []
-    satisfied_count = 0
-    deficient_count = 0
-    missing_count = 0
-
-    for req in required_skills:
-        req_skill = req.skill
-        assigned_in_group = skill_map.get(req.skill_id, [])
-        if assigned_in_group:
-            best_assignment = max(assigned_in_group, key=lambda x: x.proficiency_level)
-            best_level = best_assignment.proficiency_level
-            covering_student = f"{best_assignment.student.first_name} {best_assignment.student.last_name}"
-            if best_level >= req.required_level:
-                status = 'satisfied'
-                gap = 0
-                satisfied_count += 1
-            else:
-                status = 'deficient'
-                gap = req.required_level - best_level
-                deficient_count += 1
-        else:
-            best_level = 0
-            covering_student = None
-            status = 'missing'
-            gap = req.required_level
-            missing_count += 1
-
-        details.append({
-            'skill_id': req.skill_id,
-            'skill_name': req_skill.skill_name,
-            'required_level': req.required_level,
-            'best_level': best_level,
-            'covering_student': covering_student,
-            'status': status,
-            'gap': gap,
-        })
-
-    total_required = len(required_skills)
-    if total_required > 0:
-        match_percentage = round((satisfied_count / total_required) * 100)
-    else:
-        match_percentage = 100 if len(member_students) > 0 else 0
-
-    return {
-        'total_required': total_required,
-        'satisfied_count': satisfied_count,
-        'deficient_count': deficient_count,
-        'missing_count': missing_count,
-        'gap_count': deficient_count + missing_count,
-        'match_percentage': match_percentage,
-        'details': details,
-        'members': [
-            {
-                'member_id': m.group_member_id,
-                'student_id': m.student_id,
-                'student_number': m.student.student_number,
-                'name': f"{m.student.last_name}, {m.student.first_name}",
-                'course': m.student.course,
-                'section': m.student.section,
-            }
-            for m in memberships
-        ],
-    }
+    Kept under its original name because the dashboard and the group templates
+    already call it; the implementation lives in
+    :func:`apps.students.matching.analyze_group_skills`.
+    """
+    return analyze_group_skills(group)
 
 
 def _group_data(group, include_analysis=True):
@@ -1213,7 +1092,7 @@ def group_get_ajax(request, pk):
     return JsonResponse(_group_data(group, include_analysis=True))
 
 
-@login_required(login_url='login')
+@manager_required
 @require_POST
 def group_save_ajax(request):
     """Validate and create or update a project group as JSON."""
@@ -1272,7 +1151,7 @@ def group_save_ajax(request):
     return JsonResponse(payload)
 
 
-@login_required(login_url='login')
+@manager_required
 @require_POST
 def group_delete_ajax(request, pk):
     """Delete a group and its member associations."""
@@ -1313,7 +1192,7 @@ def group_unassigned_students_ajax(request, group_pk):
     return JsonResponse({'students': data})
 
 
-@login_required(login_url='login')
+@manager_required
 @require_POST
 def group_member_add_ajax(request, group_pk):
     """Add a student to a group with strict validation."""
@@ -1366,7 +1245,7 @@ def group_member_add_ajax(request, group_pk):
     })
 
 
-@login_required(login_url='login')
+@manager_required
 @require_POST
 def group_member_remove_ajax(request, group_pk, member_pk):
     """Remove a student member from a group."""
@@ -1390,3 +1269,196 @@ def group_recommendations_ajax(request, group_pk):
     group = get_object_or_404(Group.objects.select_related('project'), pk=group_pk)
     recommendations = _recommend_students_for_group(group)
     return JsonResponse({'recommendations': recommendations})
+
+
+# ---------------------------------------------------------------------------
+# Automated group formation (concept paper objective 4)
+#
+# The algorithm itself lives in ``apps.students.group_formation``; these views
+# only validate input, select the eligible student pool and persist a plan.
+# ---------------------------------------------------------------------------
+
+def _eligible_students_for_project(project):
+    """Students not yet assigned to any group of ``project``, stable order."""
+    assigned = GroupMember.objects.filter(
+        group__project=project
+    ).values_list('student_id', flat=True)
+    return Student.objects.exclude(student_id__in=assigned).order_by(
+        'last_name', 'first_name', 'student_id'
+    )
+
+
+def _formation_parameters(request):
+    """Validate formation input -> ``(project, group_count, max_members, error)``."""
+    project_raw = (request.POST.get('project_id') or '').strip()
+    if not project_raw:
+        return None, None, None, 'Please select a project.'
+
+    project_pk = _parse_int(project_raw)
+    if project_pk is None:
+        return None, None, None, 'Invalid project reference.'
+    project = get_object_or_404(Project, pk=project_pk)
+
+    max_members_raw = (request.POST.get('max_members') or '').strip()
+    if max_members_raw:
+        max_members = _parse_int(max_members_raw)
+        if max_members is None:
+            return None, None, None, 'Group size must be a whole number.'
+        if not 2 <= max_members <= MAX_GROUP_MEMBERS:
+            return (
+                None, None, None,
+                f'Group size must be between 2 and {MAX_GROUP_MEMBERS}.',
+            )
+    else:
+        max_members = MAX_GROUP_MEMBERS
+
+    group_count = None
+    group_count_raw = (request.POST.get('group_count') or '').strip()
+    if group_count_raw:
+        group_count = _parse_int(group_count_raw)
+        if group_count is None or group_count < 1:
+            return (
+                None, None, None,
+                'Number of groups must be a positive whole number.',
+            )
+        if group_count > 500:
+            return None, None, None, 'Number of groups is unreasonably large.'
+
+    return project, group_count, max_members, None
+
+
+@login_required(login_url='login')
+@require_POST
+def group_automate_preview_ajax(request):
+    """Compute a balanced group plan without touching the database."""
+    project, group_count, max_members, error = _formation_parameters(request)
+    if error:
+        return JsonResponse({'error': error}, status=400)
+
+    plan = plan_groups(
+        project,
+        _eligible_students_for_project(project),
+        group_count=group_count,
+        max_members=max_members,
+    )
+    if not plan['ok']:
+        return JsonResponse(plan, status=400)
+    return JsonResponse(plan)
+
+
+@manager_required
+@require_POST
+def group_automate_save_ajax(request):
+    """Recompute the plan server-side and persist it in one transaction."""
+    project, group_count, max_members, error = _formation_parameters(request)
+    if error:
+        return JsonResponse({'error': error}, status=400)
+
+    plan = plan_groups(
+        project,
+        _eligible_students_for_project(project),
+        group_count=group_count,
+        max_members=max_members,
+    )
+    if not plan['ok'] or not plan['groups']:
+        return JsonResponse(plan, status=400)
+
+    group_ids = save_plan(project, plan)
+    created = list(
+        Group.objects.filter(group_id__in=group_ids).select_related('project')
+    )
+
+    messages.success(
+        request,
+        f'Created {len(created)} group(s) for "{project.project_name}" '
+        f'with {plan["stats"]["assigned_count"]} student(s) assigned.'
+    )
+
+    return JsonResponse({
+        'status': 'success',
+        'created': len(created),
+        'groups': [_group_data(g) for g in created],
+        'stats': plan['stats'],
+        'warnings': plan['warnings'],
+        'unassigned_count': len(plan['unassigned']),
+    })
+
+
+# ---------------------------------------------------------------------------
+# Skill matching engine page (concept paper objective 3)
+# ---------------------------------------------------------------------------
+
+@login_required(login_url='login')
+def matching_page(request):
+    """Show every student's compatibility index against a chosen project."""
+    projects = list(Project.objects.order_by('project_name'))
+
+    project_raw = (request.GET.get('project') or '').strip()
+    selected = None
+    if project_raw.isdigit():
+        wanted = int(project_raw)
+        selected = next((p for p in projects if p.project_id == wanted), None)
+    if selected is None and projects:
+        selected = projects[0]
+
+    requirements = []
+    results = []
+    assigned_ids = set()
+
+    if selected is not None:
+        requirements = project_requirements(selected)
+        results = match_students_to_project(selected)
+        assigned_ids = set(
+            GroupMember.objects.filter(
+                group__project=selected
+            ).values_list('student_id', flat=True)
+        )
+        for result in results:
+            result['assigned'] = result['student_id'] in assigned_ids
+
+        # Per-requirement coverage across the whole cohort.
+        met_counts = {req['skill_id']: 0 for req in requirements}
+        deficient_counts = {req['skill_id']: 0 for req in requirements}
+        for result in results:
+            for detail in result['details']:
+                if detail['status'] == 'met':
+                    met_counts[detail['skill_id']] += 1
+                elif detail['status'] == 'deficient':
+                    deficient_counts[detail['skill_id']] += 1
+
+        total_students = len(results)
+        requirements = [
+            dict(
+                req,
+                met_count=met_counts[req['skill_id']],
+                deficient_count=deficient_counts[req['skill_id']],
+                missing_count=(
+                    total_students
+                    - met_counts[req['skill_id']]
+                    - deficient_counts[req['skill_id']]
+                ),
+                coverage_pct=(
+                    int(round(100 * met_counts[req['skill_id']] / total_students))
+                    if total_students else 0
+                ),
+            )
+            for req in requirements
+        ]
+
+    scores = [r['score'] for r in results]
+    summary = {
+        'student_count': len(results),
+        'requirement_count': len(requirements),
+        'average_score': int(round(sum(scores) / len(scores))) if scores else None,
+        'fully_matched': sum(1 for r in results if r['missing_count'] == 0 and r['deficient_count'] == 0),
+        'with_missing': sum(1 for r in results if r['missing_count'] > 0),
+        'assigned_count': len(assigned_ids),
+    }
+
+    return render(request, 'students/matching.html', {
+        'projects': projects,
+        'selected_project': selected,
+        'requirements': requirements,
+        'results': results,
+        'summary': summary,
+    })

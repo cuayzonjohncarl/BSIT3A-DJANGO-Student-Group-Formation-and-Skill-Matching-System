@@ -92,12 +92,12 @@
                             {% endif %}
                         </td>
                         <td>
-                            {% if u.is_superuser %}
-                            <span class="badge bg-purple-lt text-purple">Superuser</span>
-                            {% elif u.is_staff %}
-                            <span class="badge bg-warning-lt text-warning">Staff</span>
+                            {% if u.role == 'admin' %}
+                            <span class="badge bg-purple-lt text-purple"><i class="fas fa-shield-halved me-1"></i>Administrator</span>
+                            {% elif u.role == 'student' %}
+                            <span class="badge bg-cyan-lt text-cyan">Student</span>
                             {% else %}
-                            <span class="badge bg-secondary-lt text-secondary">User</span>
+                            <span class="badge bg-primary-lt text-primary">Instructor</span>
                             {% endif %}
                         </td>
                         <td>
@@ -114,6 +114,7 @@
                                    data-email="{{ u.email }}"
                                    data-active="{{ u.is_active|yesno:'true,false' }}"
                                    data-staff="{{ u.is_staff|yesno:'true,false' }}"
+                                   data-role="{{ u.role }}"
                                    title="Edit">
                                     <i class="ti ti-pencil text-primary"></i>
                                 </a>
@@ -223,10 +224,19 @@
                             </div>
                         </div>
                         <div class="col-6">
-                            <label class="form-label">Role</label>
+                            <label class="form-label" for="edit_role">Role</label>
+                            <select name="role" id="edit_role" class="form-select">
+                                <option value="instructor">Instructor</option>
+                                <option value="student">Student</option>
+                                <option value="admin">Administrator</option>
+                            </select>
+                            <small class="form-hint">Administrators manage users; instructors manage academic records; students have read-only access.</small>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">Django staff</label>
                             <div class="form-check form-switch mt-1">
                                 <input class="form-check-input" type="checkbox" name="is_staff" id="edit_is_staff">
-                                <label class="form-check-label" for="edit_is_staff">Staff</label>
+                                <label class="form-check-label" for="edit_is_staff">Admin site access</label>
                             </div>
                         </div>
                     </div>
@@ -317,12 +327,14 @@
             document.getElementById('edit_email').value       = btn.dataset.email;
             document.getElementById('edit_is_active').checked = btn.dataset.active === 'true';
             document.getElementById('edit_is_staff').checked  = btn.dataset.staff === 'true';
+            document.getElementById('edit_role').value       = btn.dataset.role || 'instructor';
         } else {
             modalTitle.textContent = 'Add User';
             document.getElementById('edit_id').value = '';
             passwordHint.classList.add('d-none');
             passwordInput.required = true;
             document.getElementById('edit_is_active').checked = true;
+            document.getElementById('edit_role').value = 'instructor';
         }
     });
 

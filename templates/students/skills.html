@@ -10,11 +10,13 @@
         <h2 class="page-title mb-1">Skills Management</h2>
         <div class="sg-page-desc">Maintain the skill catalog used for student profiles and project requirements.</div>
       </div>
+      {% if can_manage %}
       <div class="col-auto ms-auto">
         <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#skillModal" data-mode="create">
           <i class='fas fa-plus-circle me-2'></i> Add Skill
         </button>
       </div>
+      {% endif %}
     </div>
   </div>
 
@@ -72,7 +74,7 @@
               {% if skill.description %}
               <div class="skill-desc-cell">
                 <button type="button" class="btn btn-link text-start p-0 skill-desc-preview-btn" data-description="{{ skill.description|escape }}" title="Click to view full description">
-                  <div class="skill-desc-preview">{{ skill.description }}</div>
+                  <span class="skill-desc-preview">{{ skill.description }}</span>
                 </button>
                 <button type="button" class="btn btn-link btn-sm p-0 skill-desc-view" data-description="{{ skill.description|escape }}">View description</button>
               </div>
@@ -81,6 +83,7 @@
               {% endif %}
             </td>
             <td>
+              {% if can_manage %}
               <div class="d-flex gap-1">
                 <button type="button" class="btn btn-ghost-secondary btn-icon btn-sm" data-bs-toggle="modal" data-bs-target="#skillModal" data-mode="edit" data-id="{{ skill.skill_id }}" data-skill-name="{{ skill.skill_name }}" data-description="{{ skill.description|default_if_none:'' }}" title="Edit">
                   <i class="fas fa-edit text-primary"></i>
@@ -89,6 +92,7 @@
                   <i class="fas fa-trash-alt text-danger"></i>
                 </button>
               </div>
+              {% endif %}
             </td>
         </tr>
         {% empty %}
@@ -101,9 +105,11 @@
                     <p class="empty-title">No skills found</p>
                     <p class="empty-subtitle">Try adjusting your search or add a new skill.</p>
                     <div class="empty-action">
+{% if can_manage %}
                         <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#skillModal" data-mode="create">
                             <i class="fas fa-plus-circle me-2"></i> Add Skill
                         </button>
+{% endif %}
                     </div>
                 </div>
             </td>
@@ -241,6 +247,7 @@
   .skill-desc-preview {
     display: -webkit-box;
     -webkit-line-clamp: 2;
+    line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
     text-overflow: ellipsis;

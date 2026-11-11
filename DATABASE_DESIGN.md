@@ -65,6 +65,19 @@
 | group_id | Group ID | Foreign Key |
 | student_id | Student ID | Foreign Key |
 
+## 8. DJANGO AUTHENTICATION TABLES (role storage)
+
+The three application roles are stored in Django's built-in tables, so **no new table or column was added** for role-based authorization.
+
+| Table | Purpose |
+|---|---|
+| auth_user | Account records (username, name, email, password hash, flags) |
+| auth_group | Role containers: `Administrator`, `Instructor`, `Student` |
+| auth_user_groups | Links an account to its role group |
+| auth_group_permissions / auth_user_user_permissions | Standard Django permissions (unused by the custom role checks) |
+
+Role resolution order: superuser -> `Administrator` -> `Instructor` -> `Student` -> default (`Instructor`, for accounts created before roles existed).
+
 ## DATABASE RELATIONSHIPS
 
 - One student can have many skills.
@@ -74,3 +87,4 @@
 - One project can have many groups.
 - One group can have many students.
 - One student can belong to a group.
+- One user can belong to one role group; a user's own `Info` records are scoped by `tblinfo.user_id`.

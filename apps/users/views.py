@@ -2,15 +2,36 @@ from django.shortcuts import render, get_object_or_404
 from django.http import JsonResponse
 from django.contrib import messages
 from django.contrib.auth.models import User
-from django.contrib.auth.decorators import login_required, user_passes_test
+from django.contrib.auth.decorators import login_required
 from django.views.decorators.http import require_POST
 from django.core.paginator import Paginator
 from django.db import IntegrityError
 from django.db.models import Q
 
+from apps.core.roles import (
+    DEFAULT_ROLE,
+    ROLE_GROUPS,
+    ROLE_LABELS,
+    admin_required,
+    role_for,
+    set_role,
+)
 
-def _is_superuser(user):
-    return user.is_superuser
+VALID_ROLES = tuple(ROLE_GROUPS)
+
+
+def _requested_role(request):
+    """Validate the posted role key.
+
+    Returns ``(role, error)``: ``role`` is ``None`` when the caller did not
+    post one, and ``error`` is set when the posted value is unknown.
+    """
+    role = (request.POST.get('role') or '').strip()
+    if not role:
+        return None, None
+    if role not in VALID_ROLES:
+        return None, 'Unknown role.'
+    return role, None
 
 
 def _parse_int(raw_value):
@@ -22,7 +43,7 @@ def _parse_int(raw_value):
 
 # PAGE
 @login_required(login_url='login')
-@user_passes_test(_is_superuser, login_url='dashboard')
+@admin_required
 def user_list_page(request):
     query = request.GET.get('q', '').strip()
 
@@ -40,6 +61,12 @@ def user_list_page(request):
     page_number = request.GET.get('page', 1)
     users = paginator.get_page(page_number)
 
+    # Attach the resolved role so the table can show the real authorization
+    # level instead of Django's is_staff/is_superuser flags.
+    for user in users.object_list:
+        user.role = role_for(user) or DEFAULT_ROLE
+        user.role_label = ROLE_LABELS.get(user.role, '')
+
     return render(request, 'users/list.html', {
         'users': users,
         'query': query,
@@ -48,22 +75,27 @@ def user_list_page(request):
 
 # LIST USERS (AJAX)
 @login_required(login_url='login')
-@user_passes_test(_is_superuser, login_url='dashboard')
+@admin_required
 def user_list_ajax(request):
     users_list = User.objects.all().order_by('-date_joined')
     paginator = Paginator(users_list, 10)
     page_number = request.GET.get('page', 1)
     users = paginator.get_page(page_number)
-    data = list(users.object_list.values(
-        'id',
-        'username',
-        'first_name',
-        'last_name',
-        'email',
-        'is_staff',
-        'is_active',
-        'date_joined',
-    ))
+    data = [
+        {
+            'id': u.id,
+            'username': u.username,
+            'first_name': u.first_name,
+            'last_name': u.last_name,
+            'email': u.email,
+            'is_staff': u.is_staff,
+            'is_active': u.is_active,
+            'date_joined': u.date_joined,
+            'role': role_for(u) or DEFAULT_ROLE,
+            'role_label': ROLE_LABELS.get(role_for(u) or DEFAULT_ROLE, ''),
+        }
+        for u in users.object_list
+    ]
     return JsonResponse({
         "data":     data,
         "has_next": users.has_next(),
@@ -76,9 +108,10 @@ def user_list_ajax(request):
 
 # GET SINGLE USER (AJAX)
 @login_required(login_url='login')
-@user_passes_test(_is_superuser, login_url='dashboard')
+@admin_required
 def user_get_ajax(request, pk):
     user = get_object_or_404(User, pk=pk)
+    role = role_for(user) or DEFAULT_ROLE
     return JsonResponse({
         "id":         user.id,
         "username":   user.username,
@@ -87,12 +120,13 @@ def user_get_ajax(request, pk):
         "email":      user.email,
         "is_staff":   user.is_staff,
         "is_active":  user.is_active,
+        "role":       role,
     })
 
 
 # CREATE / UPDATE USER (AJAX)
 @login_required(login_url='login')
-@user_passes_test(_is_superuser, login_url='dashboard')
+@admin_required
 @require_POST
 def user_save_ajax(request):
     user_id = request.POST.get("id")
@@ -109,6 +143,10 @@ def user_save_ajax(request):
 
     username = request.POST.get("username", "").strip()
     email = request.POST.get("email", "").strip()
+
+    role, role_error = _requested_role(request)
+    if role_error:
+        return JsonResponse({"error": role_error}, status=400)
 
     if not username:
         return JsonResponse({"error": "Username is required."}, status=400)
@@ -139,6 +177,16 @@ def user_save_ajax(request):
     except IntegrityError:
         return JsonResponse({"error": "Could not save user due to a conflict (duplicate username/email)."}, status=400)
 
+    # Role assignment: explicit choice wins, otherwise new users default to
+    # Instructor and existing users keep the role they already hold.
+    if role is None:
+        role = DEFAULT_ROLE if not is_update else (role_for(user) or DEFAULT_ROLE)
+
+    if is_update and user.pk == request.user.pk and role != 'admin':
+        return JsonResponse({"error": "You cannot remove your own administrator role."}, status=400)
+
+    set_role(user, role)
+
     messages.success(
         request,
         f'User "{user.username}" has been {"updated" if is_update else "saved"} successfully.'
@@ -153,12 +201,14 @@ def user_save_ajax(request):
         "email": user.email,
         "is_staff": user.is_staff,
         "is_active": user.is_active,
+        "role": role,
+        "role_label": ROLE_LABELS.get(role, ''),
     })
 
 
 # DELETE USER (AJAX)
 @login_required(login_url='login')
-@user_passes_test(_is_superuser, login_url='dashboard')
+@admin_required
 @require_POST
 def user_delete_ajax(request, pk):
     user = get_object_or_404(User, pk=pk)

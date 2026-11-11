@@ -10,11 +10,13 @@
         <h2 class="page-title mb-1">Project Required Skills</h2>
         <div class="sg-page-desc">Map the skills and proficiency levels each project expects from a team.</div>
       </div>
+      {% if can_manage %}
       <div class="col-auto ms-auto">
         <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#projectSkillModal" data-mode="create" {% if not all_projects or not all_skills %}disabled title="Add projects and skills first"{% endif %}>
           <i class='fas fa-plus-circle me-2'></i> Add Required Skill
         </button>
       </div>
+      {% endif %}
     </div>
   </div>
 
@@ -72,10 +74,11 @@
             <td class="text-muted">{{ requirement.skill.skill_name }}</td>
             <td>
               <span class="badge {% if requirement.required_level == 5 %}bg-green-lt text-green{% elif requirement.required_level == 4 %}bg-azure-lt text-azure{% elif requirement.required_level == 3 %}bg-primary-lt text-primary{% else %}bg-secondary-lt text-secondary{% endif %}">
-                {% if requirement.required_level == 5 %}Expert (5){% elif requirement.required_level == 4 %}Advanced (4){% elif requirement.required_level == 3 %}Intermediate (3){% elif requirement.required_level == 2 %}Basic (2){% elif requirement.required_level == 1 %}Beginner (1){% else %}Level {{ requirement.required_level }}{% endif %}
+                {% if requirement.required_level == 5 %}Expert (5){% elif requirement.required_level == 4 %}Advanced (4){% elif requirement.required_level == 3 %}Intermediate (3){% elif requirement.required_level == 2 %}Elementary (2){% elif requirement.required_level == 1 %}Beginner (1){% else %}Level {{ requirement.required_level }}{% endif %}
               </span>
             </td>
             <td>
+              {% if can_manage %}
               <div class="d-flex gap-1">
                 <button type="button" class="btn btn-ghost-secondary btn-icon btn-sm" data-bs-toggle="modal" data-bs-target="#projectSkillModal" data-mode="edit" data-id="{{ requirement.project_skill_id }}" data-project-id="{{ requirement.project_id }}" data-skill-id="{{ requirement.skill_id }}" data-required-level="{{ requirement.required_level }}" title="Edit">
                   <i class="fas fa-edit text-primary"></i>
@@ -84,6 +87,7 @@
                   <i class="fas fa-trash-alt text-danger"></i>
                 </button>
               </div>
+              {% endif %}
             </td>
         </tr>
         {% empty %}
@@ -96,9 +100,11 @@
                     <p class="empty-title">No required skills found</p>
                     <p class="empty-subtitle">Try adjusting your search or add a required skill to a project.</p>
                     <div class="empty-action">
+{% if can_manage %}
                         <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#projectSkillModal" data-mode="create" {% if not all_projects or not all_skills %}disabled title="Add projects and skills first"{% endif %}>
                             <i class="fas fa-plus-circle me-2"></i> Add Required Skill
                         </button>
+{% endif %}
                     </div>
                 </div>
             </td>
@@ -175,7 +181,7 @@
             <div class="col-12">
               <label class="form-label">Required Level</label>
               <input type="number" step="1" min="1" max="5" name="required_level" id="required_level" class="form-control" required>
-              <small class="form-hint">Minimum skill level required for this project: 1 = Beginner, 2 = Basic, 3 = Intermediate, 4 = Advanced, 5 = Expert.</small>
+              <small class="form-hint">Minimum skill level required for this project: 1 = Beginner, 2 = Elementary, 3 = Intermediate, 4 = Advanced, 5 = Expert.</small>
             </div>
           </div>
         </div>

@@ -44,6 +44,7 @@
             Directory
           </span>
         </li>
+        {% if is_admin %}
         <li class="nav-item">
           <a class="nav-link {% if request.resolver_match.app_name == 'users' %}active{% endif %}" href="{% url 'users:user_list' %}">
             <span class="nav-link-icon d-md-none d-lg-inline-block">
@@ -52,6 +53,7 @@
             <span class="nav-link-title">Users</span>
           </a>
         </li>
+        {% endif %}
 
         <li class="nav-item">
           <a class="nav-link {% if request.resolver_match.url_name == 'student_list' %}active{% endif %}" href="{% url 'students:student_list' %}">
@@ -118,6 +120,15 @@
           </span>
         </li>
         <li class="nav-item">
+          <a class="nav-link {% if request.resolver_match.url_name == 'matching' %}active{% endif %}" href="{% url 'students:matching' %}">
+            <span class="nav-link-icon d-md-none d-lg-inline-block">
+              <i class="fas fa-scale-balanced"></i>
+            </span>
+            <span class="nav-link-title">Skill Matching</span>
+          </a>
+        </li>
+
+        <li class="nav-item">
           <a class="nav-link {% if request.resolver_match.url_name == 'group_list' %}active{% endif %}" href="{% url 'students:group_list' %}">
             <span class="nav-link-icon d-md-none d-lg-inline-block">
               <i class="fas fa-users-gear"></i>
@@ -139,13 +150,11 @@
 
         <li class="nav-item mt-auto sg-nav-footer">
           <div class="sg-user-card">
-            <a href="{% url 'users:user_list' %}" class="d-flex align-items-center gap-2 text-decoration-none min-w-0 w-100">
+            <a href="{% if is_admin %}{% url 'users:user_list' %}{% else %}{% url 'dashboard' %}{% endif %}" class="d-flex align-items-center gap-2 text-decoration-none min-w-0 w-100">
               <span class="sg-avatar">{{ user.username|first|upper }}</span>
               <span class="min-w-0 flex-grow-1">
                 <span class="sg-user-name">{{ user.username }}</span>
-                <span class="sg-user-role">
-                  {% if user.is_superuser %}Administrator{% elif user.is_authenticated %}Instructor{% endif %}
-                </span>
+                <span class="sg-user-role">{{ user_role_label }}</span>
               </span>
             </a>
             {% if user.is_authenticated %}

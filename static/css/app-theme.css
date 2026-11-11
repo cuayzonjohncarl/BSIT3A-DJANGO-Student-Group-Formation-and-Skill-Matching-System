@@ -2390,3 +2390,233 @@ textarea.form-control {
     width: 100%;
   }
 }
+
+/* --------------------------------------------------------------------------
+   13. Matching engine, formation preview and analytics charts
+   -------------------------------------------------------------------------- */
+
+.sg-chart {
+  width: 100%;
+  min-height: 240px;
+}
+
+.sg-chart--tall {
+  min-height: 220px;
+}
+
+/* --------------------------------------------------------------------------
+   "Why NN%" score-breakdown disclosure on the Skill Matching table.
+
+   The toggle lives inside the narrow Status column, but the expanded content
+   is rendered in its own full-width row underneath, so the per-skill list
+   never gets squeezed into a 150px cell.
+   -------------------------------------------------------------------------- */
+
+.sg-why-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-top: 0.4rem;
+  padding: 0.15rem 0.45rem;
+  border: 1px solid var(--sg-border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--sg-text-2);
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.4;
+  cursor: pointer;
+  transition: color var(--sg-dur-fast) var(--sg-ease),
+    border-color var(--sg-dur-fast) var(--sg-ease),
+    background-color var(--sg-dur-fast) var(--sg-ease);
+}
+
+.sg-why-btn::before {
+  content: "\25B8";
+  display: inline-block;
+  font-size: 0.7rem;
+  transition: transform var(--sg-dur-fast) var(--sg-ease);
+}
+
+.sg-why-btn:hover {
+  color: var(--sg-violet);
+  border-color: rgba(139, 124, 255, 0.45);
+  background: rgba(139, 124, 255, 0.08);
+}
+
+.sg-why-btn[aria-expanded="true"] {
+  color: var(--sg-violet);
+  border-color: rgba(139, 124, 255, 0.45);
+}
+
+.sg-why-btn[aria-expanded="true"]::before {
+  transform: rotate(90deg);
+}
+
+.sg-why-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--sg-focus-ring);
+}
+
+.sg-why-row[hidden] {
+  display: none !important;
+}
+
+.sg-why-row > td {
+  padding: 0 0.75rem 0.85rem;
+  background: rgba(139, 124, 255, 0.04);
+  border-top: 1px dashed var(--sg-border);
+}
+
+.sg-why-panel {
+  padding: 0.8rem 0.9rem;
+  background: var(--sg-card-2);
+  border: 1px solid var(--sg-border);
+  border-radius: var(--sg-radius-sm);
+  animation: sg-drop-in var(--sg-dur-fast) var(--sg-ease-out) backwards;
+}
+
+.sg-why-head {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+  padding-bottom: 0.6rem;
+  margin-bottom: 0.6rem;
+  border-bottom: 1px solid var(--sg-border);
+}
+
+.sg-why-head-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  flex: 0 0 auto;
+  border-radius: 8px;
+  background: rgba(139, 124, 255, 0.14);
+  color: var(--sg-violet);
+  font-size: 0.85rem;
+}
+
+.sg-why-title {
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: var(--sg-text-1);
+}
+
+.sg-why-sub {
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--sg-text-2);
+}
+
+.sg-why-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
+  gap: 0.45rem;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.sg-why-item {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  padding: 0.45rem 0.6rem;
+  background: var(--sg-card);
+  border: 1px solid var(--sg-border);
+  border-radius: var(--sg-radius-sm);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.sg-why-skill {
+  font-weight: 600;
+  color: var(--sg-text-1);
+}
+
+.sg-why-meta {
+  color: var(--sg-text-2);
+  font-size: 0.75rem;
+}
+
+.sg-why-points {
+  margin-left: auto;
+  color: var(--sg-text-3, var(--sg-text-2));
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.sg-why-formula {
+  margin-top: 0.6rem;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--sg-text-2);
+}
+
+@media (max-width: 575.98px) {
+  .sg-why-list {
+    grid-template-columns: 1fr;
+  }
+
+  .sg-why-row > td {
+    padding: 0 0.5rem 0.65rem;
+  }
+}
+
+/* "Why this student" bullets inside recommendation cards */
+.sg-rec-reasons {
+  margin: 0;
+  padding-left: 1.05rem;
+  color: var(--sg-text-2);
+  font-size: 0.8rem;
+  line-height: 1.55;
+}
+
+.sg-rec-reasons li + li {
+  margin-top: 0.2rem;
+}
+
+.sg-rec-reasons .sg-tag {
+  margin-left: 0.25rem;
+}
+
+/* Formation preview grid reuses the group cards already styled above */
+#autoPreview .sg-group-card {
+  height: 100%;
+}
+
+#autoPreview .row > [class*="col-"] {
+  animation: sg-fade-up var(--sg-dur-base) var(--sg-ease-out) backwards;
+}
+
+#autoPreview .row > [class*="col-"]:nth-child(2) { animation-delay: 0.05s; }
+#autoPreview .row > [class*="col-"]:nth-child(3) { animation-delay: 0.1s; }
+#autoPreview .row > [class*="col-"]:nth-child(4) { animation-delay: 0.15s; }
+#autoPreview .row > [class*="col-"]:nth-child(n + 5) { animation-delay: 0.2s; }
+
+#autoWarnings .alert ul {
+  padding-left: 1.1rem;
+  margin-bottom: 0;
+  font-size: 0.85rem;
+}
+
+/* Charts should never push the card wider than its column on small screens */
+.apexcharts-canvas {
+  max-width: 100%;
+}
+
+/* Keyboard focus must stay visible on links, disclosures and custom controls.
+   Form fields and .btn already render their own focus ring above. */
+a:focus-visible,
+summary:focus-visible,
+[tabindex]:focus-visible,
+.dropdown-item:focus-visible,
+.page-link:focus-visible {
+  outline: 2px solid var(--sg-violet);
+  outline-offset: 2px;
+}

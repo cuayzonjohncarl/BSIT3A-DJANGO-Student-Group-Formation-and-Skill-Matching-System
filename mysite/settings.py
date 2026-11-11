@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
 from pathlib import Path
+import os
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -20,12 +21,25 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-zsnno#^l!whuzs%55j6*366px#r09+borh$1^2mj*_ovz47!o_'
+# The development fallback below is only used when the environment variable is
+# unset; set DJANGO_SECRET_KEY (and never commit it) for any deployed instance.
+SECRET_KEY = os.environ.get(
+    'DJANGO_SECRET_KEY',
+    'django-insecure-zsnno#^l!whuzs%55j6*366px#r09+borh$1^2mj*_ovz47!o_',
+)
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+# DJANGO_DEBUG=0 disables debug mode for a deployed environment.
+DEBUG = os.environ.get('DJANGO_DEBUG', '1') != '0'
 
-ALLOWED_HOSTS = []
+if DEBUG:
+    ALLOWED_HOSTS = []
+else:
+    ALLOWED_HOSTS = [
+        host.strip()
+        for host in os.environ.get('DJANGO_ALLOWED_HOSTS', '').split(',')
+        if host.strip()
+    ]
 
 
 # Application definition
@@ -68,6 +82,7 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                'apps.core.context_processors.roles',
             ],
         },
     },
@@ -82,11 +97,11 @@ WSGI_APPLICATION = 'mysite.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'student_group_matching',
-        'USER': 'root',
-        'PASSWORD': '',
-        'HOST': 'localhost',
-        'PORT': '3306',
+        'NAME': os.environ.get('DJANGO_DB_NAME', 'student_group_matching'),
+        'USER': os.environ.get('DJANGO_DB_USER', 'root'),
+        'PASSWORD': os.environ.get('DJANGO_DB_PASSWORD', ''),
+        'HOST': os.environ.get('DJANGO_DB_HOST', 'localhost'),
+        'PORT': os.environ.get('DJANGO_DB_PORT', '3306'),
     }
 }
 

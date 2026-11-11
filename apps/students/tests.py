@@ -5,6 +5,15 @@ from django.db import connection
 from django.test import SimpleTestCase, TestCase, TransactionTestCase
 from django.urls import resolve, reverse
 
+from .group_formation import MAX_GROUP_MEMBERS, group_label, plan_groups, save_plan
+from .matching import (
+    analyze_group_skills,
+    match_student_to_requirements,
+    match_students_to_project,
+    proficiency_label,
+    proficiency_scale_text,
+    recommend_candidates,
+)
 from .models import (
     Group,
     GroupMember,
@@ -1262,3 +1271,560 @@ class Stage4GroupAndMatchingTests(UnmanagedTablesMixin, TransactionTestCase):
         resp = self.client.get(reverse('students:group_recommendations_ajax', kwargs={'group_pk': group.group_id}))
         self.assertEqual(resp.status_code, 302)
         self.assertTrue('login' in resp['Location'].lower() or 'next=' in resp['Location'].lower())
+
+
+class IndividualVsGroupCoverageTests(UnmanagedTablesMixin, TransactionTestCase):
+    """A student's compatibility index and a group's combined coverage agree.
+
+    The individual index is a weighted mean of ``min(level / required, 1)``
+    per requirement. The group uses the **best** proficiency any member has
+    for each requirement, so the combined coverage can never be lower than the
+    best member's individual index, and it hits 100% exactly when every
+    requirement is covered at the required level by at least one member.
+    """
+
+    def setUp(self):
+        self.project = Project.objects.create(project_name='Combined Coverage Project')
+        self.backend = Skill.objects.create(skill_name='Backend Web Development', description='API')
+        self.frontend = Skill.objects.create(skill_name='Frontend Development', description='UI')
+        ProjectRequiredSkill.objects.create(project=self.project, skill=self.backend, required_level=4)
+        ProjectRequiredSkill.objects.create(project=self.project, skill=self.frontend, required_level=2)
+
+        # Ana covers backend fully, Bea covers design fully: together they
+        # close every requirement, individually neither of them does.
+        self.ana = Student.objects.create(
+            student_number='2024-901', first_name='Ana', last_name='Santos',
+            email='ana@example.com', course='BSIT', section='3A', year_level=3,
+        )
+        self.bea = Student.objects.create(
+            student_number='2024-902', first_name='Bea', last_name='Cruz',
+            email='bea@example.com', course='BSIT', section='3A', year_level=3,
+        )
+        self.cara = Student.objects.create(
+            student_number='2024-903', first_name='Cara', last_name='Diaz',
+            email='cara@example.com', course='BSIT', section='3A', year_level=3,
+        )
+
+        StudentSkill.objects.create(student=self.ana, skill=self.backend, proficiency_level=4)
+        StudentSkill.objects.create(student=self.cara, skill=self.frontend, proficiency_level=2)
+        # Bea is recorded twice for the same skill - the engines must collapse
+        # duplicates to the highest level (2), not double count them.
+        StudentSkill.objects.create(student=self.bea, skill=self.backend, proficiency_level=1)
+        StudentSkill.objects.create(student=self.bea, skill=self.backend, proficiency_level=2)
+
+        self.group = Group.objects.create(project=self.project, group_name='Alpha Team')
+        GroupMember.objects.create(group=self.group, student=self.ana)
+        GroupMember.objects.create(group=self.group, student=self.bea)
+
+        self.results = {r['student_id']: r for r in match_students_to_project(self.project)}
+        self.analysis = analyze_group_skills(self.group)
+
+    def test_individual_scores_are_reproducible(self):
+        # Weighted total = 4 (Backend) + 2 (Frontend) = 6.
+        # Ana: Backend met (4/4 -> 4 pts), Frontend missing -> 4/6 = 67%.
+        self.assertEqual(self.results[self.ana.student_id]['score'], 67)
+        # Bea: the duplicate Backend rows collapse to the higher level (2/4
+        # -> 2 pts) and Frontend is not recorded -> 2/6 = 33%.
+        self.assertEqual(self.results[self.bea.student_id]['score'], 33)
+        # Cara is not in the group but must still be scored consistently:
+        # Frontend met (2/2 -> 2 pts), Backend missing -> 2/6 = 33%.
+        self.assertEqual(self.results[self.cara.student_id]['score'], 33)
+
+        # Recomputing must return identical scores.
+        repeat = {r['student_id']: r for r in match_students_to_project(self.project)}
+        for student_id, original in self.results.items():
+            self.assertEqual(repeat[student_id]['score'], original['score'])
+
+    def test_combined_coverage_is_never_below_the_best_member(self):
+        best_member = max(self.results[s.student_id]['score']
+                          for s in self.group.members.select_related('student'))
+        # Group = Ana + Bea: best Backend level is 4 (Ana, full credit 4/4);
+        # nobody recorded Frontend (0/2). weighted = 4/6 = 67%, which equals
+        # the best member's own index and can never fall below it.
+        self.assertEqual(best_member, 67)
+        self.assertEqual(self.analysis['weighted_pct'], 67)
+        self.assertGreaterEqual(self.analysis['weighted_pct'], best_member)
+        # 1 of the 2 requirements is satisfied.
+        self.assertEqual(self.analysis['match_percentage'], 50)
+
+    def test_combination_adds_value_beyond_individual_scores(self):
+        # Ana + Bea only reach 67% because Frontend is uncovered. Adding Cara
+        # (Frontend 2) closes the remaining requirement, so the combined
+        # coverage ends up higher than any single member's own index.
+        best_individual = max(
+            r['score'] for r in self.results.values()
+        )
+        GroupMember.objects.create(group=self.group, student=self.cara)
+        analysis = analyze_group_skills(self.group)
+
+        self.assertLess(self.results[self.bea.student_id]['score'], analysis['weighted_pct'])
+        self.assertGreater(analysis['weighted_pct'], best_individual)
+        self.assertEqual(analysis['weighted_pct'], 100)
+        self.assertEqual(analysis['satisfied_count'], 2)
+        self.assertEqual(analysis['deficient_count'], 0)
+        self.assertEqual(analysis['missing_count'], 0)
+
+    def test_weaker_members_do_not_drag_combined_coverage_down(self):
+        # Cara joins with Frontend 2 (exactly the required level), lifting the
+        # group from 67% to 100%. The best-level rule means extra members can
+        # only raise coverage, never lower it.
+        GroupMember.objects.create(group=self.group, student=self.cara)
+        analysis = analyze_group_skills(self.group)
+        self.assertEqual(analysis['weighted_pct'], 100)
+        self.assertEqual(analysis['match_percentage'], 100)
+        self.assertGreaterEqual(analysis['weighted_pct'], self.analysis['weighted_pct'])
+
+        # A student with no recorded skills must not move the numbers at all.
+        nobody = Student.objects.create(
+            student_number='2024-904', first_name='Dan', last_name='Reyes',
+            email='dan@example.com', course='BSIT', section='3A', year_level=3,
+        )
+        GroupMember.objects.create(group=self.group, student=nobody)
+        after = analyze_group_skills(self.group)
+        self.assertEqual(after['weighted_pct'], analysis['weighted_pct'])
+        self.assertEqual(after['match_percentage'], analysis['match_percentage'])
+
+    def test_empty_group_scores_zero_against_requirements(self):
+        empty = Group.objects.create(project=self.project, group_name='Empty Team')
+        analysis = analyze_group_skills(empty)
+        self.assertEqual(analysis['weighted_pct'], 0)
+        self.assertEqual(analysis['match_percentage'], 0)
+        self.assertEqual(analysis['missing_count'], 2)
+
+    def test_matching_page_renders_breakdown_toggle(self):
+        """The 'Why NN%' control expands into a full-width breakdown row."""
+        # The matching page is behind login like every other app page.
+        user = User.objects.create_user(username='whyviewer', password='secret1234')
+        self.client.force_login(user)
+
+        response = self.client.get(reverse('students:matching'))
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, 'students/matching.html')
+        content = response.content.decode()
+        self.assertIn('sg-why-btn', content)
+        self.assertIn('aria-controls="why-1"', content)
+        self.assertIn('sg-why-row', content)
+        # Every breakdown row must be able to span the whole table.
+        self.assertIn('colspan="6"', content)
+
+
+# ---------------------------------------------------------------------------
+# Stage 7 - matching engine, automated group formation, role enforcement
+# ---------------------------------------------------------------------------
+
+class Stage7UrlResolutionTests(SimpleTestCase):
+    """The new matching and formation endpoints must reverse correctly."""
+
+    def test_paths_resolve_to_expected_view_names(self):
+        cases = {
+            '/students/matching/': 'matching',
+            '/students/groups/ajax/automate/': 'group_automate_ajax',
+            '/students/groups/ajax/automate/save/': 'group_automate_save_ajax',
+        }
+        for url, name in cases.items():
+            with self.subTest(url=url):
+                self.assertEqual(resolve(url).url_name, name)
+
+    def test_named_urls_reverse(self):
+        self.assertEqual(reverse('students:matching'), '/students/matching/')
+        self.assertEqual(
+            reverse('students:group_automate_ajax'),
+            '/students/groups/ajax/automate/',
+        )
+        self.assertEqual(
+            reverse('students:group_automate_save_ajax'),
+            '/students/groups/ajax/automate/save/',
+        )
+
+
+class Stage7MatchingEngineTests(SimpleTestCase):
+    """Objective 3: the compatibility index must be explainable and exact.
+
+    These functions are pure, so they are tested without touching a database.
+    """
+
+    class StubStudent:
+        def __init__(self, **kwargs):
+            self.student_id = kwargs.get('student_id', 1)
+            self.student_number = kwargs.get('student_number', '2026-0001')
+            self.first_name = kwargs.get('first_name', 'Jane')
+            self.last_name = kwargs.get('last_name', 'Doe')
+            self.course = kwargs.get('course', 'BSIT')
+            self.section = kwargs.get('section', 'A')
+            self.year_level = kwargs.get('year_level', 3)
+
+    REQUIREMENTS = [
+        {'skill_id': 1, 'skill_name': 'Backend', 'required_level': 4},
+        {'skill_id': 2, 'skill_name': 'Frontend', 'required_level': 1},
+    ]
+
+    def test_score_is_weighted_by_required_level(self):
+        # Backend 2/4 of a weight-4 requirement (2) + Frontend full (1) = 3/5
+        result = match_student_to_requirements(
+            self.StubStudent(), {1: 2, 2: 1}, self.REQUIREMENTS
+        )
+        self.assertEqual(result['score'], 60)
+        self.assertEqual(result['met_count'], 1)
+        self.assertEqual(result['deficient_count'], 1)
+        self.assertEqual(result['missing_count'], 0)
+
+    def test_overqualification_is_capped_at_100(self):
+        result = match_student_to_requirements(
+            self.StubStudent(), {1: 5, 2: 5}, self.REQUIREMENTS
+        )
+        self.assertEqual(result['score'], 100)
+
+    def test_unrecorded_skill_counts_as_missing(self):
+        result = match_student_to_requirements(self.StubStudent(), {}, self.REQUIREMENTS)
+        self.assertEqual(result['score'], 0)
+        self.assertEqual(result['missing_count'], 2)
+        self.assertIn('missing: Backend', result['explanation'])
+
+    def test_project_without_requirements_scores_100(self):
+        result = match_student_to_requirements(self.StubStudent(), {}, [])
+        self.assertEqual(result['score'], 100)
+        self.assertEqual(result['total'], 0)
+        self.assertIn('no required skills', result['explanation'])
+
+    def test_proficiency_scale_labels(self):
+        self.assertEqual(proficiency_label(1), 'Beginner')
+        self.assertEqual(proficiency_label(2), 'Elementary')
+        self.assertEqual(proficiency_label(3), 'Intermediate')
+        self.assertEqual(proficiency_label(4), 'Advanced')
+        self.assertEqual(proficiency_label(5), 'Expert')
+        self.assertIn('2 = Elementary', proficiency_scale_text())
+
+    def test_identical_input_produces_identical_output(self):
+        first = match_student_to_requirements(
+            self.StubStudent(), {1: 3}, self.REQUIREMENTS
+        )
+        second = match_student_to_requirements(
+            self.StubStudent(), {1: 3}, self.REQUIREMENTS
+        )
+        self.assertEqual(first, second)
+
+
+@skipUnless(
+    connection.vendor == 'sqlite',
+    'DB-backed Stage 7 tests run only with mysite.test_settings (SQLite).',
+)
+class Stage7GroupFormationTests(UnmanagedTablesMixin, TransactionTestCase):
+    """Objective 4: automated balanced group formation."""
+
+    def setUp(self):
+        StudentSkill.objects.all().delete()
+        GroupMember.objects.all().delete()
+        ProjectRequiredSkill.objects.all().delete()
+        Group.objects.all().delete()
+        Project.objects.all().delete()
+        Skill.objects.all().delete()
+        Student.objects.all().delete()
+
+        self.backend = Skill.objects.create(skill_name='Backend')
+        self.frontend = Skill.objects.create(skill_name='Frontend')
+        self.project = Project.objects.create(project_name='Capstone')
+        ProjectRequiredSkill.objects.create(
+            project=self.project, skill=self.backend, required_level=3
+        )
+        ProjectRequiredSkill.objects.create(
+            project=self.project, skill=self.frontend, required_level=3
+        )
+
+        self.students = []
+
+    def _student(self, index, skills=None):
+        student = Student.objects.create(
+            student_number=f'2026-{index:04d}',
+            first_name=f'Student{index}',
+            last_name=f'Family{index}',
+            email=f'student{index}@example.com',
+            course='BSIT',
+            section='3A',
+            year_level=3,
+        )
+        self.students.append(student)
+        for skill, level in (skills or {}).items():
+            StudentSkill.objects.create(
+                student=student, skill=skill, proficiency_level=level
+            )
+        return student
+
+    def _pool(self):
+        return list(Student.objects.order_by('student_id'))
+
+    def test_group_count_derived_from_pool_size(self):
+        for i in range(6):
+            self._student(i + 1, {self.backend: 3, self.frontend: 3})
+
+        plan = plan_groups(self.project, self._pool(), max_members=3)
+
+        self.assertTrue(plan['ok'])
+        self.assertEqual(plan['group_count'], 2)
+        self.assertEqual([g['size'] for g in plan['groups']], [3, 3])
+        self.assertEqual(plan['stats']['assigned_count'], 6)
+        self.assertEqual(plan['unassigned'], [])
+        self.assertEqual([g['label'] for g in plan['groups']], ['Group A', 'Group B'])
+
+    def test_capacity_is_respected_and_overflow_is_reported(self):
+        for i in range(5):
+            self._student(i + 1, {self.backend: 3})
+
+        plan = plan_groups(
+            self.project, self._pool(), group_count=1, max_members=2
+        )
+
+        self.assertTrue(plan['ok'])
+        self.assertEqual(plan['group_count'], 1)
+        self.assertEqual(plan['groups'][0]['size'], 2)
+        self.assertEqual(len(plan['unassigned']), 3)
+        self.assertTrue(any('Capacity' in warning for warning in plan['warnings']))
+
+    def test_plan_is_deterministic(self):
+        for i in range(6):
+            self._student(i + 1, {self.backend: 3 if i % 2 else 1})
+
+        first = plan_groups(self.project, self._pool(), max_members=3)
+        second = plan_groups(self.project, self._pool(), max_members=3)
+
+        self.assertEqual(first['groups'], second['groups'])
+        self.assertEqual(first['stats'], second['stats'])
+
+    def test_complementary_skills_are_spread_across_groups(self):
+        # Three backend specialists and three frontend specialists: a balanced
+        # plan must give every group at least one of each.
+        for i in range(3):
+            self._student(i + 1, {self.backend: 3})
+        for i in range(3, 6):
+            self._student(i + 1, {self.frontend: 3})
+
+        plan = plan_groups(self.project, self._pool(), max_members=3)
+
+        self.assertEqual(plan['group_count'], 2)
+        for group in plan['groups']:
+            self.assertEqual(group['size'], 3)
+            self.assertEqual(group['coverage'], 100, group['label'])
+            self.assertEqual(group['unmet'], [])
+
+    def test_students_without_recorded_skills_are_still_placed(self):
+        self._student(1, {self.backend: 3, self.frontend: 3})
+        self._student(2)  # no skills at all
+        self._student(3)  # no skills at all
+
+        plan = plan_groups(self.project, self._pool(), max_members=2)
+
+        self.assertTrue(plan['ok'])
+        self.assertEqual(plan['stats']['assigned_count'], 3)
+        self.assertEqual(plan['stats']['students_without_skills'], 2)
+        self.assertTrue(any('no recorded skills' in w for w in plan['warnings']))
+
+    def test_empty_pool_is_reported_as_an_error(self):
+        plan = plan_groups(self.project, [], max_members=3)
+
+        self.assertFalse(plan['ok'])
+        self.assertEqual(plan['group_count'], 0)
+        self.assertTrue(plan['errors'])
+        self.assertEqual(plan['groups'], [])
+
+    def test_save_plan_persists_groups_and_members_without_duplicates(self):
+        for i in range(6):
+            self._student(i + 1, {self.backend: 3, self.frontend: 3})
+
+        plan = plan_groups(self.project, self._pool(), max_members=3)
+        group_ids = save_plan(self.project, plan)
+
+        self.assertEqual(len(group_ids), 2)
+        self.assertEqual(Group.objects.filter(project=self.project).count(), 2)
+        self.assertEqual(
+            GroupMember.objects.filter(group__project=self.project).count(), 6
+        )
+        # No student may appear in more than one generated group.
+        memberships = GroupMember.objects.filter(
+            group__project=self.project
+        ).values_list('student_id', flat=True)
+        self.assertEqual(len(memberships), len(set(memberships)))
+        self.assertEqual(
+            list(Group.objects.filter(project=self.project).values_list('group_name', flat=True)),
+            ['Group A', 'Group B'],
+        )
+
+    def test_save_plan_avoids_duplicate_group_names(self):
+        for i in range(2):
+            self._student(i + 1, {self.backend: 3})
+        Group.objects.create(project=self.project, group_name='Group A')
+
+        plan = plan_groups(self.project, self._pool(), group_count=1, max_members=2)
+        save_plan(self.project, plan)
+
+        names = sorted(Group.objects.filter(project=self.project).values_list('group_name', flat=True))
+        self.assertEqual(names, ['Group A', 'Group A (2)'])
+
+    def test_group_label_sequence(self):
+        self.assertEqual(group_label(0), 'Group A')
+        self.assertEqual(group_label(25), 'Group Z')
+        self.assertEqual(group_label(26), 'Group AA')
+
+    def test_gap_analysis_reports_partial_coverage(self):
+        student = self._student(1, {self.backend: 2})
+        group = Group.objects.create(project=self.project, group_name='Partial')
+        GroupMember.objects.create(group=group, student=student)
+
+        analysis = analyze_group_skills(group)
+
+        self.assertEqual(analysis['total_required'], 2)
+        self.assertEqual(analysis['satisfied_count'], 0)
+        self.assertEqual(analysis['deficient_count'], 1)
+        self.assertEqual(analysis['missing_count'], 1)
+        self.assertEqual(analysis['match_percentage'], 0)
+        # Backend is level 2 of 3 = 2/3 credit, Frontend 0 => 33% weighted.
+        self.assertEqual(analysis['weighted_pct'], 33)
+        statuses = {d['skill_name']: d['status'] for d in analysis['details']}
+        self.assertEqual(statuses['Backend'], 'deficient')
+        self.assertEqual(statuses['Frontend'], 'missing')
+
+    def test_recommendations_rank_gap_fillers_first(self):
+        weak = self._student(1, {self.backend: 1})
+        strong = self._student(2, {self.frontend: 5})
+        group = Group.objects.create(project=self.project, group_name='Team')
+        GroupMember.objects.create(group=group, student=weak)
+
+        recommendations = recommend_candidates(group)
+
+        self.assertEqual(recommendations[0]['student_id'], strong.student_id)
+        self.assertTrue(recommendations[0]['reasons'])
+        self.assertIn('Frontend', recommendations[0]['reasons'][0])
+        self.assertGreater(recommendations[0]['gap_score'], 0)
+
+    def test_recommendations_exclude_students_already_in_a_group(self):
+        self._student(1, {self.backend: 3})
+        assigned = self._student(2, {self.frontend: 3})
+        group = Group.objects.create(project=self.project, group_name='Team')
+        GroupMember.objects.create(group=group, student=assigned)
+
+        recommendations = recommend_candidates(group)
+
+        self.assertEqual(
+            [r['student_id'] for r in recommendations],
+            [self.students[0].student_id],
+        )
+
+    def test_formation_endpoints_require_authentication(self):
+        for url in [
+            reverse('students:group_automate_ajax'),
+            reverse('students:group_automate_save_ajax'),
+        ]:
+            with self.subTest(url=url):
+                response = self.client.post(url, {'project_id': self.project.project_id})
+                self.assertEqual(response.status_code, 302)
+                self.assertIn('next=', response['Location'])
+
+    def test_formation_preview_and_save_for_manager(self):
+        from apps.core.roles import ROLE_INSTRUCTOR, set_role
+
+        instructor = User.objects.create_user(username='instructor7', password='secret1234')
+        set_role(instructor, ROLE_INSTRUCTOR)
+        self.client.force_login(instructor)
+
+        for i in range(4):
+            self._student(i + 1, {self.backend: 3})
+
+        payload = {'project_id': self.project.project_id, 'max_members': 2}
+        preview = self.client.post(reverse('students:group_automate_ajax'), payload)
+        self.assertEqual(preview.status_code, 200)
+        self.assertTrue(preview.json()['ok'])
+        self.assertEqual(preview.json()['group_count'], 2)
+        self.assertEqual(Group.objects.count(), 0)  # preview writes nothing
+
+        saved = self.client.post(reverse('students:group_automate_save_ajax'), payload)
+        self.assertEqual(saved.status_code, 200)
+        self.assertEqual(saved.json()['created'], 2)
+        self.assertEqual(Group.objects.count(), 2)
+        self.assertEqual(GroupMember.objects.count(), 4)
+
+    def test_formation_rejects_invalid_parameters(self):
+        from apps.core.roles import ROLE_INSTRUCTOR, set_role
+
+        instructor = User.objects.create_user(username='instructor8', password='secret1234')
+        set_role(instructor, ROLE_INSTRUCTOR)
+        self.client.force_login(instructor)
+
+        cases = [
+            {},
+            {'project_id': 'not-a-number'},
+            {'project_id': self.project.project_id, 'max_members': '99'},
+            {'project_id': self.project.project_id, 'group_count': '0'},
+        ]
+        for payload in cases:
+            with self.subTest(payload=payload):
+                response = self.client.post(
+                    reverse('students:group_automate_ajax'), payload
+                )
+                self.assertEqual(response.status_code, 400)
+                self.assertIn('error', response.json())
+
+    def test_students_cannot_save_groups_but_may_preview(self):
+        from apps.core.roles import ROLE_STUDENT, set_role
+
+        student_user = User.objects.create_user(username='student7', password='secret1234')
+        set_role(student_user, ROLE_STUDENT)
+        self.client.force_login(student_user)
+
+        payload = {'project_id': self.project.project_id}
+
+        preview = self.client.post(reverse('students:group_automate_ajax'), payload)
+        self.assertIn(preview.status_code, (200, 400))  # read-only access allowed
+
+        saved = self.client.post(reverse('students:group_automate_save_ajax'), payload)
+        self.assertEqual(saved.status_code, 403)
+        self.assertIn('error', saved.json())
+        self.assertEqual(Group.objects.count(), 0)
+
+    def test_matching_page_requires_login_and_renders(self):
+        self.client.logout()
+        anonymous = self.client.get(reverse('students:matching'))
+        self.assertEqual(anonymous.status_code, 302)
+
+        manager = User.objects.create_user(username='matcher7', password='secret1234')
+        self.client.force_login(manager)
+        response = self.client.get(reverse('students:matching'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, 'students/matching.html')
+        self.assertIn('results', response.context)
+        self.assertIn('summary', response.context)
+
+    def test_matching_page_scores_are_sorted_best_first(self):
+        expert = self._student(1, {self.backend: 5, self.frontend: 5})
+        beginner = self._student(2, {self.backend: 1})
+        unskilled = self._student(3)  # no skills at all
+
+        manager = User.objects.create_user(username='matcher8', password='secret1234')
+        self.client.force_login(manager)
+        response = self.client.get(reverse('students:matching'))
+
+        results = response.context['results']
+        self.assertEqual(len(results), 3)
+        self.assertEqual(results[0]['student_id'], expert.student_id)
+        self.assertEqual(results[0]['score'], 100)
+        self.assertEqual(results[1]['student_id'], beginner.student_id)
+        self.assertGreater(results[1]['score'], results[2]['score'])
+        self.assertEqual(results[2]['student_id'], unskilled.student_id)
+        self.assertEqual(results[2]['score'], 0)
+        scores = [r['score'] for r in results]
+        self.assertEqual(scores, sorted(scores, reverse=True))
+        self.assertEqual(response.context['summary']['student_count'], 3)
+        self.assertEqual(response.context['summary']['requirement_count'], 2)
+
+    def test_matching_page_reports_requirement_coverage(self):
+        self._student(1, {self.backend: 3})
+        self._student(2, {self.frontend: 3})
+
+        manager = User.objects.create_user(username='matcher9', password='secret1234')
+        self.client.force_login(manager)
+        requirements = self.client.get(
+            reverse('students:matching')
+        ).context['requirements']
+
+        by_skill = {r['skill_name']: r for r in requirements}
+        self.assertEqual(by_skill['Backend']['met_count'], 1)
+        self.assertEqual(by_skill['Backend']['missing_count'], 1)
+        self.assertEqual(by_skill['Backend']['coverage_pct'], 50)

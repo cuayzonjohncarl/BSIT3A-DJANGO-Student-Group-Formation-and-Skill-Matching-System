@@ -22,6 +22,8 @@ urlpatterns = [
     path('student-skills/ajax/save/', views.student_skill_save_ajax, name='student_skill_save_ajax'),
     path('student-skills/ajax/delete/<int:pk>/', views.student_skill_delete_ajax, name='student_skill_delete_ajax'),
 
+    path('matching/', views.matching_page, name='matching'),
+
     path('projects/', views.project_list_page, name='project_list'),
     path('projects/ajax/list/', views.project_list_ajax, name='project_list_ajax'),
     path('projects/ajax/get/<int:pk>/', views.project_get_ajax, name='project_get_ajax'),
@@ -42,5 +44,7 @@ urlpatterns = [
     path('groups/ajax/<int:group_pk>/unassigned-students/', views.group_unassigned_students_ajax, name='group_unassigned_students_ajax'),
     path('groups/ajax/<int:group_pk>/members/add/', views.group_member_add_ajax, name='group_member_add_ajax'),
     path('groups/ajax/<int:group_pk>/members/remove/<int:member_pk>/', views.group_member_remove_ajax, name='group_member_remove_ajax'),
+    path('groups/ajax/automate/', views.group_automate_preview_ajax, name='group_automate_ajax'),
+    path('groups/ajax/automate/save/', views.group_automate_save_ajax, name='group_automate_save_ajax'),
     path('groups/ajax/<int:group_pk>/recommendations/', views.group_recommendations_ajax, name='group_recommendations_ajax'),
 ]

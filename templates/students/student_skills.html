@@ -10,11 +10,13 @@
         <h2 class="page-title mb-1">Student Skills</h2>
         <div class="sg-page-desc">Record each student's skills and proficiency levels for accurate matching.</div>
       </div>
+      {% if can_manage %}
       <div class="col-auto ms-auto">
         <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#studentSkillModal" data-mode="create" {% if not all_students or not all_skills %}disabled title="Add students and skills first"{% endif %}>
           <i class='fas fa-plus-circle me-2'></i> Assign Skill
         </button>
       </div>
+      {% endif %}
     </div>
   </div>
 
@@ -74,10 +76,11 @@
             <td class="text-muted">{{ assignment.skill.skill_name }}</td>
             <td>
               <span class="badge {% if assignment.proficiency_level == 5 %}bg-green-lt text-green{% elif assignment.proficiency_level == 4 %}bg-azure-lt text-azure{% elif assignment.proficiency_level == 3 %}bg-primary-lt text-primary{% else %}bg-secondary-lt text-secondary{% endif %}">
-                {% if assignment.proficiency_level == 5 %}Expert (5){% elif assignment.proficiency_level == 4 %}Advanced (4){% elif assignment.proficiency_level == 3 %}Intermediate (3){% elif assignment.proficiency_level == 2 %}Basic (2){% elif assignment.proficiency_level == 1 %}Beginner (1){% else %}Level {{ assignment.proficiency_level }}{% endif %}
+                {% if assignment.proficiency_level == 5 %}Expert (5){% elif assignment.proficiency_level == 4 %}Advanced (4){% elif assignment.proficiency_level == 3 %}Intermediate (3){% elif assignment.proficiency_level == 2 %}Elementary (2){% elif assignment.proficiency_level == 1 %}Beginner (1){% else %}Level {{ assignment.proficiency_level }}{% endif %}
               </span>
             </td>
             <td>
+              {% if can_manage %}
               <div class="d-flex gap-1">
                 <button type="button" class="btn btn-ghost-secondary btn-icon btn-sm" data-bs-toggle="modal" data-bs-target="#studentSkillModal" data-mode="edit" data-id="{{ assignment.student_skill_id }}" data-student-id="{{ assignment.student_id }}" data-skill-id="{{ assignment.skill_id }}" data-proficiency="{{ assignment.proficiency_level }}" title="Edit">
                   <i class="fas fa-edit text-primary"></i>
@@ -86,6 +89,7 @@
                   <i class="fas fa-trash-alt text-danger"></i>
                 </button>
               </div>
+              {% endif %}
             </td>
         </tr>
         {% empty %}
@@ -98,9 +102,11 @@
                     <p class="empty-title">No skill assignments found</p>
                     <p class="empty-subtitle">Try adjusting your search or assign a skill to a student.</p>
                     <div class="empty-action">
+{% if can_manage %}
                         <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#studentSkillModal" data-mode="create" {% if not all_students or not all_skills %}disabled title="Add students and skills first"{% endif %}>
                             <i class="fas fa-plus-circle me-2"></i> Assign Skill
                         </button>
+{% endif %}
                     </div>
                 </div>
             </td>
@@ -177,7 +183,7 @@
             <div class="col-12">
               <label class="form-label">Proficiency Level</label>
               <input type="number" step="1" min="1" max="5" name="proficiency_level" id="proficiency_level" class="form-control" required>
-              <small class="form-hint">1 = Beginner, 2 = Basic, 3 = Intermediate, 4 = Advanced, 5 = Expert.</small>
+              <small class="form-hint">1 = Beginner, 2 = Elementary, 3 = Intermediate, 4 = Advanced, 5 = Expert.</small>
             </div>
           </div>
         </div>

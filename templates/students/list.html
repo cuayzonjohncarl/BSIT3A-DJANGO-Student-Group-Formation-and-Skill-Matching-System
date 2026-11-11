@@ -10,11 +10,13 @@
         <h2 class="page-title mb-1">Student Management</h2>
         <div class="sg-page-desc">Maintain the student directory used for group formation and skill matching.</div>
       </div>
+      {% if can_manage %}
       <div class="col-auto ms-auto">
         <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#studentModal" data-mode="create">
           <i class='fas fa-plus-circle me-2'></i> Add Student
         </button>
       </div>
+      {% endif %}
     </div>
   </div>
 
@@ -78,6 +80,7 @@
             <td class="text-muted">{{ student.section }}</td>
             <td class="text-muted">{{ student.get_year_level_display|default:"—" }}</td>
             <td>
+              {% if can_manage %}
               <div class="d-flex gap-1">
                 <button type="button" class="btn btn-ghost-secondary btn-icon btn-sm" data-bs-toggle="modal" data-bs-target="#studentModal" data-mode="edit" data-id="{{ student.student_id }}" data-student-number="{{ student.student_number }}" data-first-name="{{ student.first_name }}" data-last-name="{{ student.last_name }}" data-email="{{ student.email }}" data-course="{{ student.course }}" data-section="{{ student.section }}" data-year-level="{{ student.year_level|default_if_none:'' }}" title="Edit">
                   <i class="fas fa-edit text-primary"></i>
@@ -86,6 +89,7 @@
                   <i class="fas fa-trash-alt text-danger"></i>
                 </button>
               </div>
+              {% endif %}
             </td>
         </tr>
         {% empty %}
@@ -98,9 +102,11 @@
                     <p class="empty-title">No students found</p>
                     <p class="empty-subtitle">Try adjusting your search or add a new student.</p>
                     <div class="empty-action">
+{% if can_manage %}
                         <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#studentModal" data-mode="create">
                             <i class="fas fa-plus-circle me-2"></i> Add Student
                         </button>
+{% endif %}
                     </div>
                 </div>
             </td>
