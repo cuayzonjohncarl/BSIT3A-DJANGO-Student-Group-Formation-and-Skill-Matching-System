@@ -72,17 +72,31 @@
             <td class="fw-semibold">{{ project.project_name }}</td>
             <td class="text-muted">{{ project.description|default:"—"|truncatechars:80 }}</td>
             <td>
-              {% if can_manage %}
-              <div class="d-flex gap-1">
+              <div class="d-flex gap-1 align-items-center">
+                <button type="button" class="btn btn-sm btn-outline-primary project-description-toggle" data-bs-toggle="collapse" data-bs-target="#projectDescription{{ project.project_id }}" aria-expanded="false" aria-controls="projectDescription{{ project.project_id }}">
+                  <i class="fas fa-chevron-down me-1"></i> View Description
+                </button>
+                {% if can_manage %}
                 <button type="button" class="btn btn-ghost-secondary btn-icon btn-sm" data-bs-toggle="modal" data-bs-target="#projectModal" data-mode="edit" data-id="{{ project.project_id }}" data-project-name="{{ project.project_name }}" data-description="{{ project.description|default_if_none:'' }}" title="Edit">
                   <i class="fas fa-edit text-primary"></i>
                 </button>
                 <button type="button" class="btn btn-ghost-secondary btn-icon btn-sm" data-bs-toggle="modal" data-bs-target="#deleteProjectModal" data-id="{{ project.project_id }}" data-name="{{ project.project_name }}" title="Delete">
                   <i class="fas fa-trash-alt text-danger"></i>
                 </button>
+                {% endif %}
               </div>
-              {% endif %}
             </td>
+        </tr>
+        <tr class="collapse" id="projectDescription{{ project.project_id }}" data-bs-parent="#projectTableBody">
+          <td colspan="4" class="text-wrap">
+            <div class="p-3">
+              {% if project.description %}
+              <div>{{ project.description|linebreaksbr }}</div>
+              {% else %}
+              <div class="text-muted"><i class="fas fa-circle-info me-1"></i> No description provided.</div>
+              {% endif %}
+            </div>
+          </td>
         </tr>
         {% empty %}
         <tr>
@@ -287,6 +301,23 @@
         alertBox.classList.remove('d-none');
         bootstrap.Modal.getInstance(deleteModalEl).hide();
       }
+    });
+  });
+})();
+
+(function() {
+  document.querySelectorAll('.project-description-toggle').forEach(function(btn) {
+    const row = document.getElementById(btn.getAttribute('aria-controls'));
+    if (!row) return;
+
+    row.addEventListener('show.bs.collapse', function() {
+      btn.setAttribute('aria-expanded', 'true');
+      btn.innerHTML = '<i class="fas fa-chevron-up me-1"></i> Hide Description';
+    });
+
+    row.addEventListener('hide.bs.collapse', function() {
+      btn.setAttribute('aria-expanded', 'false');
+      btn.innerHTML = '<i class="fas fa-chevron-down me-1"></i> View Description';
     });
   });
 })();

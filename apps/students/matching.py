@@ -232,10 +232,11 @@ def analyze_group_skills(group):
     * ``deficient``  0 < best < required (the ``gap`` is how many levels away)
     * ``missing``    nobody in the group recorded that skill
 
-    ``match_percentage`` is the share of requirements that are satisfied.
+    ``match_percentage`` is the share of requirements that are satisfied and
     ``weighted_pct`` additionally credits partial proficiency
     (``sum(L * min(best / L, 1)) / sum(L)``), which is what the formation
-    algorithm optimises.
+    algorithm optimises. When the project defines no required skills there is
+    nothing to measure, so both are ``None`` and ``has_requirements`` is False.
     """
     required_skills = list(
         ProjectRequiredSkill.objects.filter(project_id=group.project_id)
@@ -301,15 +302,25 @@ def analyze_group_skills(group):
         })
 
     total_required = len(required_skills)
-    if total_required > 0:
+    has_requirements = total_required > 0
+    if has_requirements:
         match_percentage = round((satisfied_count / total_required) * 100)
-        weighted_pct = int(round(100 * weighted_earned / weighted_total))
+        # A requirement recorded with a zero level leaves no weight to divide
+        # the earned credit by, so report 0 rather than raising ZeroDivisionError.
+        weighted_pct = (
+            int(round(100 * weighted_earned / weighted_total))
+            if weighted_total > 0
+            else 0
+        )
     else:
-        match_percentage = 100 if member_students else 0
-        weighted_pct = match_percentage
+        # There is nothing to be compatible with, so no percentage is reported.
+        # The templates render "No requirements set" from has_requirements.
+        match_percentage = None
+        weighted_pct = None
 
     return {
         'total_required': total_required,
+        'has_requirements': has_requirements,
         'satisfied_count': satisfied_count,
         'deficient_count': deficient_count,
         'missing_count': missing_count,
@@ -340,13 +351,17 @@ def recommend_candidates(group, limit=10):
        max(0, L_d - best_d)`` where ``best_d`` is the best member level.
     2. A candidate contributes ``contribution_d = min(p_d, L_d)`` towards it,
        i.e. the candidate's usable proficiency capped at the requirement.
-    3. ``gap_score = 100 * sum(L_d * contribution_d / L_d over deficits) /
-       sum(L_d over deficits)`` is the share of the outstanding weighted gap
-       the candidate would fill.
+    3. ``gap_score = 100 * sum(min(p_d, deficit_d) over deficits) /
+       sum(deficit_d over deficits)`` is the share of the outstanding gap the
+       candidate would fill.
     4. Ties break on how many requirements the candidate fully satisfies, then
        on the total level they bring, then on name.
 
-    Students already assigned to **any** group of this project are excluded and
+    When the roster already covers every requirement there is no gap left, so
+    an empty list is returned: suggesting students would report a meaningless
+    100% gap coverage for all of them.
+
+    Students already assigned to **any** group in the system are excluded and
     the group's remaining capacity is respected.
     """
     from .models import Student
@@ -359,8 +374,7 @@ def recommend_candidates(group, limit=10):
     required_skill_ids = [r['skill_id'] for r in requirements]
 
     assigned_ids = set(
-        GroupMember.objects.filter(group__project=project)
-        .values_list('student_id', flat=True)
+        GroupMember.objects.values_list('student_id', flat=True)
     )
     candidates = list(
         Student.objects.exclude(student_id__in=assigned_ids)
@@ -388,6 +402,10 @@ def recommend_candidates(group, limit=10):
         for r in requirements
     }
     total_deficit = sum(deficits.values())
+    if total_deficit <= 0:
+        # Every requirement is already satisfied by the current roster, so no
+        # candidate can close a remaining gap.
+        return []
 
     recommendations = []
     for student in candidates:
@@ -431,9 +449,7 @@ def recommend_candidates(group, limit=10):
                 'deficit': deficit,
             })
 
-        gap_score = (
-            int(round(100 * filled / total_deficit)) if total_deficit else 100
-        )
+        gap_score = int(round(100 * filled / total_deficit))
 
         recommendations.append({
             'student_id': student.student_id,

@@ -1,7 +1,7 @@
 """Automated balanced group formation (concept paper objective 4).
 
 Given a project, its requirement matrix and the pool of students that are not
-yet assigned to any group of that project, :func:`plan_groups` distributes the
+yet assigned to any group in the system, :func:`plan_groups` distributes the
 students into balanced teams.  The algorithm is **deterministic**: the same
 input always produces the same plan, which makes it testable and lets an
 instructor reproduce a previewed result exactly on save.
@@ -9,17 +9,17 @@ instructor reproduce a previewed result exactly on save.
 Algorithm
 ---------
 1. **Eligibility** - only students passed in by the view are considered; a
-   student that already belongs to a group of this project is never placed
-   twice, and a student can only appear in one generated group.
+   student that already belongs to any group in the system is never placed,
+   and a student can only appear in one generated group.
 2. **Strength ranking** - for every student and requirement:
    ``earned = L * min(level, L)`` (capped, so holding a level-5 skill for a
    level-3 requirement is not over-credited) and ``met`` = number of
    requirements satisfied. Students are ordered by ``(-met, -earned,
    surname, forename, id)``.
-3. **Seeding** - the number of groups is ``ceil(students / max_members)``
-   unless the caller asks for a specific count. The strongest ``k`` students
-   seed the ``k`` groups (one each), which guarantees every group starts with a
-   different strength profile.
+3. **Seeding** - the number of groups is ``ceil(students / max_members)``,
+   capped at the system limit of 10, unless the caller asks for a specific
+   count. The strongest ``k`` students seed the ``k`` groups (one each), which
+   guarantees every group starts with a different strength profile.
 4. **Greedy marginal-gain fill** - the remaining students are placed one by
    one into the group where they add the most weighted coverage
    (``sum(L * (min(new, L) - min(best, L)))`` over the requirements). Ties go
@@ -53,6 +53,9 @@ from .models import Group, GroupMember
 
 #: System-wide member cap per group (also enforced by manual member adds).
 MAX_GROUP_MEMBERS = 5
+
+#: System-wide cap on automatically derived group counts.
+MAX_FORMATION_GROUPS = 10
 
 #: How many rebalancing passes run before the plan is returned.
 MAX_REBALANCE_PASSES = 6
@@ -269,11 +272,17 @@ def plan_groups(project, students, group_count=None, max_members=MAX_GROUP_MEMBE
     if student_count == 0:
         errors.append(
             'No eligible students are available. Every student is already '
-            'assigned to a group for this project, or the student list is empty.'
+            'assigned to a group in the system, or the student list is empty.'
         )
 
     if group_count is None:
-        group_count = max(1, math.ceil(student_count / max_members)) if student_count else 1
+        group_count = (
+            min(
+                MAX_FORMATION_GROUPS,
+                max(1, math.ceil(student_count / max_members)),
+            )
+            if student_count else 1
+        )
     if student_count and group_count > student_count:
         warnings.append(
             f'Only {student_count} student(s) available, so {group_count} groups '
@@ -425,22 +434,35 @@ def save_plan(project, plan):
 
     Only the plan produced by :func:`plan_groups` for this same project is
     written; memberships are de-duplicated so a student can never end up in two
-    generated groups. Returns the created ``Group`` queryset ids.
+    generated groups, and students already assigned to any group in the system
+    are skipped if a stale plan reaches this function. Returns the created
+    ``Group`` ids.
     """
     created_group_ids = []
-    seen_students = set()
+    seen_students = set(
+        GroupMember.objects.values_list('student_id', flat=True)
+    )
 
     for group_payload in plan.get('groups', []):
+        members = []
+        for member in group_payload['members']:
+            student_id = member['student_id']
+            if student_id in seen_students:
+                continue
+            members.append(member)
+            seen_students.add(student_id)
+
+        if not members:
+            continue
+
         group = Group.objects.create(
             project=project,
             group_name=_unique_group_name(project, group_payload['label']),
         )
         created_group_ids.append(group.group_id)
-        for member in group_payload['members']:
-            student_id = member['student_id']
-            if student_id in seen_students:
-                continue
-            GroupMember.objects.create(group=group, student_id=student_id)
-            seen_students.add(student_id)
+        for member in members:
+            GroupMember.objects.create(
+                group=group, student_id=member['student_id']
+            )
 
     return created_group_ids

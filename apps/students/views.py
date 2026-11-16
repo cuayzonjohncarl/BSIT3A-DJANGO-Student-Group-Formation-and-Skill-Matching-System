@@ -6,12 +6,13 @@ from django.views.decorators.http import require_POST
 from django.core.paginator import Paginator
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
-from django.db import IntegrityError
-from django.db.models import Q
+from django.db import IntegrityError, transaction
+from django.db.models import Count, Prefetch, Q
 
 from apps.core.roles import manager_required
 
 from .group_formation import (
+    MAX_FORMATION_GROUPS,
     MAX_GROUP_MEMBERS,
     plan_groups,
     save_plan,
@@ -460,28 +461,88 @@ def _student_skill_data(student_skill):
 
 @login_required(login_url='login')
 def student_skill_list_page(request):
-    """Render the searchable, paginated student-skill assignment list."""
+    """Render the searchable, paginated student skill profile list."""
     query = request.GET.get('q', '').strip()
 
-    assignments_list = StudentSkill.objects.select_related('student', 'skill')
+    selected_skill_id = _parse_int(request.GET.get('skill', '').strip())
+    selected_skill = None
+    if selected_skill_id is not None:
+        selected_skill = Skill.objects.filter(pk=selected_skill_id).first()
+        if selected_skill is None:
+            selected_skill_id = None
+
+    selected_proficiency = _parse_int(
+        request.GET.get('proficiency', '').strip()
+    )
+    if not (
+        selected_proficiency is not None
+        and MIN_PROFICIENCY_LEVEL <= selected_proficiency <= MAX_PROFICIENCY_LEVEL
+    ):
+        selected_proficiency = None
+
+    students_list = Student.objects.prefetch_related(
+        Prefetch(
+            'student_skills',
+            queryset=StudentSkill.objects.select_related('skill').order_by(
+                '-proficiency_level', 'skill__skill_name'
+            ),
+            to_attr='prefetched_skills',
+        )
+    )
 
     if query:
-        assignments_list = assignments_list.filter(
-            Q(student__first_name__icontains=query) |
-            Q(student__last_name__icontains=query) |
-            Q(student__student_number__icontains=query) |
-            Q(skill__skill_name__icontains=query)
-        )
+        students_list = students_list.filter(
+            Q(first_name__icontains=query) |
+            Q(last_name__icontains=query) |
+            Q(student_number__icontains=query) |
+            Q(student_skills__skill__skill_name__icontains=query)
+        ).distinct()
 
-    paginator = Paginator(assignments_list, 10)
+    assignment_filters = {}
+    if selected_skill_id is not None:
+        assignment_filters['student_skills__skill_id'] = selected_skill_id
+    if selected_proficiency is not None:
+        assignment_filters['student_skills__proficiency_level'] = selected_proficiency
+    if assignment_filters:
+        students_list = students_list.filter(**assignment_filters).distinct()
+
+    paginator = Paginator(students_list, 10)
     page_number = request.GET.get('page', 1)
-    assignments = paginator.get_page(page_number)
+    students = paginator.get_page(page_number)
+
+    total_students = Student.objects.count()
+    total_assignments = StudentSkill.objects.count()
+    students_with_skills = Student.objects.filter(
+        student_skills__isnull=False
+    ).distinct().count()
+
+    student_skill_map = {}
+    for student_id, skill_id in StudentSkill.objects.values_list(
+        'student_id', 'skill_id'
+    ):
+        student_skill_map.setdefault(str(student_id), []).append(skill_id)
 
     return render(request, 'students/student_skills.html', {
-        'assignments': assignments,
+        'students': students,
         'query': query,
+        'selected_skill_id': selected_skill_id,
+        'selected_skill': selected_skill,
+        'selected_proficiency': selected_proficiency,
+        'selected_proficiency_label': (
+            proficiency_label(selected_proficiency)
+            if selected_proficiency is not None else ''
+        ),
+        'proficiency_choices': [
+            (level, proficiency_label(level))
+            for level in range(MIN_PROFICIENCY_LEVEL, MAX_PROFICIENCY_LEVEL + 1)
+        ],
+        'total_students': total_students,
+        'total_assignments': total_assignments,
+        'students_with_skills': students_with_skills,
+        'students_without_skills': total_students - students_with_skills,
         'all_students': Student.objects.all(),
         'all_skills': Skill.objects.all(),
+        'student_skill_map': student_skill_map,
     })
 
 
@@ -797,26 +858,45 @@ def _project_skill_data(project_skill):
 
 @login_required(login_url='login')
 def project_skill_list_page(request):
-    """Render the searchable, paginated project-skill requirement list."""
+    """Render the searchable, project-centered required-skill list."""
     query = request.GET.get('q', '').strip()
 
-    requirements_list = ProjectRequiredSkill.objects.select_related('project', 'skill')
+    projects_list = Project.objects.prefetch_related(
+        Prefetch(
+            'required_skills',
+            queryset=ProjectRequiredSkill.objects.select_related('skill').order_by(
+                'skill__skill_name'
+            ),
+            to_attr='prefetched_requirements',
+        )
+    )
 
     if query:
-        requirements_list = requirements_list.filter(
-            Q(project__project_name__icontains=query) |
-            Q(skill__skill_name__icontains=query)
-        )
+        projects_list = projects_list.filter(
+            Q(project_name__icontains=query) |
+            Q(required_skills__skill__skill_name__icontains=query)
+        ).distinct()
 
-    paginator = Paginator(requirements_list, 10)
+    paginator = Paginator(projects_list, 10)
     page_number = request.GET.get('page', 1)
-    requirements = paginator.get_page(page_number)
+    projects = paginator.get_page(page_number)
+
+    requirement_stats = ProjectRequiredSkill.objects.aggregate(
+        total_assignments=Count('project_skill_id'),
+        total_projects=Count('project_id', distinct=True),
+    )
+    all_projects = list(Project.objects.all())
+    all_skills = list(Skill.objects.all())
 
     return render(request, 'students/project_skills.html', {
-        'requirements': requirements,
+        'projects': projects,
         'query': query,
-        'all_projects': Project.objects.all(),
-        'all_skills': Skill.objects.all(),
+        'total_projects_with_requirements': requirement_stats['total_projects'],
+        'total_requirements': requirement_stats['total_assignments'],
+        'total_available_skills': len(all_skills),
+        'total_projects': len(all_projects),
+        'all_projects': all_projects,
+        'all_skills': all_skills,
     })
 
 
@@ -1042,7 +1122,15 @@ def group_list_page(request):
             'analysis': analysis,
         })
 
-    all_projects = Project.objects.all().order_by('project_name')
+    all_projects = list(Project.objects.all().order_by('project_name'))
+    total_students = Student.objects.count()
+    globally_assigned_count = (
+        GroupMember.objects.values('student_id').distinct().count()
+    )
+    for project in all_projects:
+        project.eligible_count = max(
+            total_students - globally_assigned_count, 0
+        )
 
     return render(request, 'students/groups.html', {
         'page_obj': page_obj,
@@ -1050,6 +1138,7 @@ def group_list_page(request):
         'query': query,
         'project_filter': project_filter,
         'all_projects': all_projects,
+        'max_formation_groups': MAX_FORMATION_GROUPS,
     })
 
 
@@ -1166,13 +1255,13 @@ def group_delete_ajax(request, pk):
 
 @login_required(login_url='login')
 def group_unassigned_students_ajax(request, group_pk):
-    """Return students not yet assigned to ANY group for this group's project."""
-    group = get_object_or_404(Group.objects.select_related('project'), pk=group_pk)
+    """Return students not yet assigned to ANY group in the system."""
+    group = get_object_or_404(Group, pk=group_pk)
 
-    # Find student IDs already assigned to any group under this project
-    assigned_student_ids = GroupMember.objects.filter(
-        group__project=group.project
-    ).values_list('student_id', flat=True)
+    # A student can belong to only one group, regardless of project.
+    assigned_student_ids = GroupMember.objects.values_list(
+        'student_id', flat=True
+    )
 
     available_students = Student.objects.exclude(
         student_id__in=assigned_student_ids
@@ -1206,32 +1295,48 @@ def group_member_add_ajax(request, group_pk):
     if student_pk is None:
         return JsonResponse({'error': 'Invalid student reference.'}, status=400)
 
-    student = get_object_or_404(Student, pk=student_pk)
-
-    # Check maximum group size
-    current_count = GroupMember.objects.filter(group=group).count()
-    if current_count >= MAX_GROUP_MEMBERS:
-        return JsonResponse(
-            {'error': f'This group has reached the maximum capacity of {MAX_GROUP_MEMBERS} members.'},
-            status=400
+    # Serialize membership changes on the student itself so concurrent manual
+    # add and automated save requests across different projects cannot both
+    # pass the global duplicate check before either one inserts.
+    with transaction.atomic():
+        student = get_object_or_404(
+            Student.objects.select_for_update(), pk=student_pk
         )
+        Group.objects.select_for_update().get(pk=group.group_id)
 
-    # Check if student is already in this group
-    if GroupMember.objects.filter(group=group, student=student).exists():
-        return JsonResponse({'error': 'This student is already in this group.'}, status=400)
+        # Check maximum group size
+        current_count = GroupMember.objects.filter(group=group).count()
+        if current_count >= MAX_GROUP_MEMBERS:
+            return JsonResponse(
+                {'error': f'This group has reached the maximum capacity of {MAX_GROUP_MEMBERS} members.'},
+                status=400
+            )
 
-    # Check if student is already in ANOTHER group for this same project
-    existing_in_project = GroupMember.objects.filter(
-        group__project=group.project, student=student
-    ).select_related('group').first()
-
-    if existing_in_project:
-        return JsonResponse(
-            {'error': f'Student is already a member of "{existing_in_project.group.group_name}" for this project.'},
-            status=400
+        # A student can belong to only one group in the entire system.
+        existing_membership = (
+            GroupMember.objects.filter(student=student)
+            .select_related('group__project')
+            .first()
         )
+        if existing_membership:
+            if existing_membership.group_id == group.group_id:
+                return JsonResponse(
+                    {'error': 'This student is already in this group.'},
+                    status=400
+                )
+            return JsonResponse(
+                {
+                    'error': (
+                        f'Student is already a member of '
+                        f'"{existing_membership.group.group_name}" in '
+                        f'"{existing_membership.group.project.project_name}". '
+                        'A student can belong to only one group in the system.'
+                    )
+                },
+                status=400
+            )
 
-    membership = GroupMember.objects.create(group=group, student=student)
+        membership = GroupMember.objects.create(group=group, student=student)
 
     messages.success(
         request,
@@ -1278,11 +1383,9 @@ def group_recommendations_ajax(request, group_pk):
 # only validate input, select the eligible student pool and persist a plan.
 # ---------------------------------------------------------------------------
 
-def _eligible_students_for_project(project):
-    """Students not yet assigned to any group of ``project``, stable order."""
-    assigned = GroupMember.objects.filter(
-        group__project=project
-    ).values_list('student_id', flat=True)
+def _globally_unassigned_students():
+    """Students not yet assigned to any group in the system, stable order."""
+    assigned = GroupMember.objects.values_list('student_id', flat=True)
     return Student.objects.exclude(student_id__in=assigned).order_by(
         'last_name', 'first_name', 'student_id'
     )
@@ -1321,10 +1424,30 @@ def _formation_parameters(request):
                 None, None, None,
                 'Number of groups must be a positive whole number.',
             )
-        if group_count > 500:
-            return None, None, None, 'Number of groups is unreasonably large.'
 
     return project, group_count, max_members, None
+
+
+def _validate_formation_group_count(group_count, eligible_count):
+    """Validate an explicit group count against the eligible pool."""
+    if group_count is None:
+        return None
+
+    if group_count > MAX_FORMATION_GROUPS:
+        return f'Number of groups cannot exceed {MAX_FORMATION_GROUPS}.'
+
+    max_groups = eligible_count // 2
+    if group_count > max_groups:
+        if eligible_count < 2:
+            return 'At least 2 eligible students are required to form a group.'
+        return (
+            f'Number of groups cannot exceed {max_groups} for '
+            f'{eligible_count} eligible student(s) because each group must '
+            'have at least 2 members. Leave Number of groups blank to '
+            'calculate automatically.'
+        )
+
+    return None
 
 
 @login_required(login_url='login')
@@ -1335,9 +1458,16 @@ def group_automate_preview_ajax(request):
     if error:
         return JsonResponse({'error': error}, status=400)
 
+    eligible_students = list(_globally_unassigned_students())
+    error = _validate_formation_group_count(
+        group_count, len(eligible_students)
+    )
+    if error:
+        return JsonResponse({'error': error}, status=400)
+
     plan = plan_groups(
         project,
-        _eligible_students_for_project(project),
+        eligible_students,
         group_count=group_count,
         max_members=max_members,
     )
@@ -1354,16 +1484,34 @@ def group_automate_save_ajax(request):
     if error:
         return JsonResponse({'error': error}, status=400)
 
-    plan = plan_groups(
-        project,
-        _eligible_students_for_project(project),
-        group_count=group_count,
-        max_members=max_members,
-    )
-    if not plan['ok'] or not plan['groups']:
-        return JsonResponse(plan, status=400)
+    # Lock every student row before reading assignments. This is the global
+    # membership barrier shared by manual additions and automated saves, so
+    # concurrent requests targeting different projects cannot assign the same
+    # student twice.
+    with transaction.atomic():
+        list(
+            Student.objects.select_for_update()
+            .order_by('student_id')
+            .values_list('student_id', flat=True)
+        )
 
-    group_ids = save_plan(project, plan)
+        eligible_students = list(_globally_unassigned_students())
+        error = _validate_formation_group_count(
+            group_count, len(eligible_students)
+        )
+        if error:
+            return JsonResponse({'error': error}, status=400)
+
+        plan = plan_groups(
+            project,
+            eligible_students,
+            group_count=group_count,
+            max_members=max_members,
+        )
+        if not plan['ok'] or not plan['groups']:
+            return JsonResponse(plan, status=400)
+
+        group_ids = save_plan(project, plan)
     created = list(
         Group.objects.filter(group_id__in=group_ids).select_related('project')
     )
@@ -1408,13 +1556,37 @@ def matching_page(request):
     if selected is not None:
         requirements = project_requirements(selected)
         results = match_students_to_project(selected)
-        assigned_ids = set(
-            GroupMember.objects.filter(
-                group__project=selected
-            ).values_list('student_id', flat=True)
+        student_ids = [result['student_id'] for result in results]
+        memberships = (
+            GroupMember.objects.filter(student_id__in=student_ids)
+            .select_related('group__project')
+            .order_by('group_id', 'student_id')
         )
+
+        assigned_ids = set()
+        other_membership_by_student = {}
+        for membership in memberships:
+            if membership.group.project_id == selected.project_id:
+                assigned_ids.add(membership.student_id)
+            else:
+                other_membership_by_student.setdefault(
+                    membership.student_id, membership
+                )
+
         for result in results:
-            result['assigned'] = result['student_id'] in assigned_ids
+            student_id = result['student_id']
+            other_membership = other_membership_by_student.get(student_id)
+            result['assigned'] = student_id in assigned_ids
+            result['assigned_elsewhere'] = (
+                not result['assigned'] and other_membership is not None
+            )
+            result['other_group_name'] = (
+                other_membership.group.group_name if other_membership else ''
+            )
+            result['other_project_name'] = (
+                other_membership.group.project.project_name
+                if other_membership else ''
+            )
 
         # Per-requirement coverage across the whole cohort.
         met_counts = {req['skill_id']: 0 for req in requirements}

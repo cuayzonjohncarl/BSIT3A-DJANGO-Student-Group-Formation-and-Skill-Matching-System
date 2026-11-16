@@ -41,7 +41,7 @@
 
         <li class="nav-item">
           <span class="sg-nav-section">
-            Directory
+            Students &amp; Users
           </span>
         </li>
         {% if is_admin %}
@@ -61,15 +61,6 @@
               <i class="fas fa-user-graduate"></i>
             </span>
             <span class="nav-link-title">Students</span>
-          </a>
-        </li>
-
-        <li class="nav-item">
-          <a class="nav-link {% if request.resolver_match.app_name == 'info' %}active{% endif %}" href="{% url 'info:info_list' %}">
-            <span class="nav-link-icon d-md-none d-lg-inline-block">
-              <i class="fas fa-address-card"></i>
-            </span>
-            <span class="nav-link-title">Info Records</span>
           </a>
         </li>
 
@@ -116,7 +107,7 @@
 
         <li class="nav-item">
           <span class="sg-nav-section">
-            Matching
+            Matching &amp; Formation
           </span>
         </li>
         <li class="nav-item">
@@ -124,7 +115,7 @@
             <span class="nav-link-icon d-md-none d-lg-inline-block">
               <i class="fas fa-scale-balanced"></i>
             </span>
-            <span class="nav-link-title">Skill Matching</span>
+            <span class="nav-link-title">Student&ndash;Project Matching</span>
           </a>
         </li>
 
@@ -133,7 +124,7 @@
             <span class="nav-link-icon d-md-none d-lg-inline-block">
               <i class="fas fa-users-gear"></i>
             </span>
-            <span class="nav-link-title">Groups &amp; Matching</span>
+            <span class="nav-link-title">Group Formation &amp; Gaps</span>
           </a>
         </li>
 

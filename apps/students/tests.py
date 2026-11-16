@@ -558,12 +558,25 @@ class Stage2CrudTests(UnmanagedTablesMixin, TransactionTestCase):
         self.assertEqual(response.status_code, 400)
         self.assertTrue(Skill.objects.filter(pk=skill.pk).exists())
 
-    def test_skill_list_page_renders(self):
-        self._create_skill(name='Rendered Skill')
+    def test_skill_list_page_renders_expandable_descriptions(self):
+        self._create_skill(
+            name='Rendered Skill',
+            description='First line of description.\nSecond line of description.',
+        )
+        self._create_skill(name='Undescribed Skill', description=None)
+
         response = self.client.get(reverse('students:skill_list'))
+
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'Rendered Skill')
         self.assertContains(response, 'Skills Management')
+        self.assertContains(response, 'data-bs-toggle="collapse"')
+        self.assertContains(response, 'aria-controls="skillDescription')
+        self.assertContains(response, 'First line of description.')
+        self.assertContains(response, 'Second line of description.')
+        self.assertContains(response, 'No description provided.')
+        self.assertContains(response, 'data-mode="edit"')
+        self.assertNotContains(response, 'viewSkillDescriptionModal')
 
     def test_student_skill_list_page_renders(self):
         skill = self._create_skill(name='Rendered Skill')
@@ -1216,6 +1229,67 @@ class Stage4GroupAndMatchingTests(UnmanagedTablesMixin, TransactionTestCase):
         self.assertEqual(conflict_resp.status_code, 400)
         self.assertIn('already a member', conflict_resp.json()['error'])
 
+    def test_prevent_student_in_multiple_groups_across_projects(self):
+        other_project = Project.objects.create(project_name='Other Capstone')
+        group_a = Group.objects.create(project=self.project, group_name='Team A')
+        group_b = Group.objects.create(project=other_project, group_name='Team B')
+
+        added = self.client.post(
+            reverse(
+                'students:group_member_add_ajax',
+                kwargs={'group_pk': group_a.group_id},
+            ),
+            {'student_id': self.student1.student_id},
+        )
+        self.assertEqual(added.status_code, 200)
+
+        conflict_resp = self.client.post(
+            reverse(
+                'students:group_member_add_ajax',
+                kwargs={'group_pk': group_b.group_id},
+            ),
+            {'student_id': self.student1.student_id},
+        )
+        self.assertEqual(conflict_resp.status_code, 400)
+        self.assertIn('already a member', conflict_resp.json()['error'])
+        self.assertIn(self.project.project_name, conflict_resp.json()['error'])
+        self.assertEqual(
+            GroupMember.objects.filter(student=self.student1).count(), 1
+        )
+
+    def test_unassigned_students_excludes_global_members(self):
+        group = Group.objects.create(project=self.project, group_name='Team A')
+        other_project = Project.objects.create(project_name='Other Capstone')
+        other_group = Group.objects.create(
+            project=other_project, group_name='Other Team'
+        )
+        unassigned = Student.objects.create(
+            student_number='2024-003',
+            first_name='Alex',
+            last_name='Cruz',
+            email='alex@example.com',
+            course='BSIT',
+            section='3A',
+            year_level=3,
+        )
+        GroupMember.objects.create(group=group, student=self.student1)
+        GroupMember.objects.create(group=other_group, student=self.student2)
+
+        response = self.client.get(
+            reverse(
+                'students:group_unassigned_students_ajax',
+                kwargs={'group_pk': group.group_id},
+            )
+        )
+
+        self.assertEqual(response.status_code, 200)
+        available_ids = {
+            student['student_id'] for student in response.json()['students']
+        }
+        self.assertNotIn(self.student1.student_id, available_ids)
+        self.assertNotIn(self.student2.student_id, available_ids)
+        self.assertEqual(available_ids, {unassigned.student_id})
+
     def test_group_recommendations_exclude_assigned_and_score_by_coverage(self):
         group = Group.objects.create(project=self.project, group_name='Team Rec')
         # student1 has backend level 4 (meets req 3), student2 has db level 2 (< req 3)
@@ -1236,6 +1310,28 @@ class Stage4GroupAndMatchingTests(UnmanagedTablesMixin, TransactionTestCase):
         recs2 = resp2.json()['recommendations']
         self.assertEqual(len(recs2), 1)
         self.assertEqual(recs2[0]['student_id'], self.student2.student_id)
+
+    def test_group_recommendations_exclude_students_assigned_elsewhere(self):
+        group = Group.objects.create(project=self.project, group_name='Team Rec')
+        other_project = Project.objects.create(project_name='Other Capstone')
+        other_group = Group.objects.create(
+            project=other_project, group_name='Other Team'
+        )
+        GroupMember.objects.create(group=other_group, student=self.student1)
+
+        resp = self.client.get(
+            reverse(
+                'students:group_recommendations_ajax',
+                kwargs={'group_pk': group.group_id},
+            )
+        )
+
+        self.assertEqual(resp.status_code, 200)
+        rec_ids = {
+            rec['student_id'] for rec in resp.json()['recommendations']
+        }
+        self.assertNotIn(self.student1.student_id, rec_ids)
+        self.assertIn(self.student2.student_id, rec_ids)
 
     def test_group_recommendations_edge_cases(self):
         # Project with no requirements
@@ -1552,6 +1648,21 @@ class Stage7GroupFormationTests(UnmanagedTablesMixin, TransactionTestCase):
     def _pool(self):
         return list(Student.objects.order_by('student_id'))
 
+    def _login_instructor(self, username):
+        from apps.core.roles import ROLE_INSTRUCTOR, set_role
+
+        instructor = User.objects.create_user(
+            username=username, password='secret1234'
+        )
+        set_role(instructor, ROLE_INSTRUCTOR)
+        self.client.force_login(instructor)
+
+    def _formation_urls(self):
+        return (
+            'students:group_automate_ajax',
+            'students:group_automate_save_ajax',
+        )
+
     def test_group_count_derived_from_pool_size(self):
         for i in range(6):
             self._student(i + 1, {self.backend: 3, self.frontend: 3})
@@ -1564,6 +1675,18 @@ class Stage7GroupFormationTests(UnmanagedTablesMixin, TransactionTestCase):
         self.assertEqual(plan['stats']['assigned_count'], 6)
         self.assertEqual(plan['unassigned'], [])
         self.assertEqual([g['label'] for g in plan['groups']], ['Group A', 'Group B'])
+
+    def test_group_count_derived_from_pool_size_is_capped_at_ten(self):
+        for i in range(51):
+            self._student(i + 1)
+
+        plan = plan_groups(self.project, self._pool(), max_members=5)
+
+        self.assertTrue(plan['ok'])
+        self.assertEqual(plan['group_count'], 10)
+        self.assertEqual([group['size'] for group in plan['groups']], [5] * 10)
+        self.assertEqual(len(plan['unassigned']), 1)
+        self.assertTrue(any('Capacity' in warning for warning in plan['warnings']))
 
     def test_capacity_is_respected_and_overflow_is_reported(self):
         for i in range(5):
@@ -1657,6 +1780,85 @@ class Stage7GroupFormationTests(UnmanagedTablesMixin, TransactionTestCase):
 
         names = sorted(Group.objects.filter(project=self.project).values_list('group_name', flat=True))
         self.assertEqual(names, ['Group A', 'Group A (2)'])
+
+    def test_save_plan_skips_students_assigned_in_any_project(self):
+        assigned = self._student(1, {self.backend: 3})
+        available = self._student(2, {self.backend: 3})
+        other_project = Project.objects.create(project_name='Other Project')
+        existing = Group.objects.create(
+            project=other_project, group_name='Existing Group'
+        )
+        GroupMember.objects.create(group=existing, student=assigned)
+
+        plan = plan_groups(
+            self.project,
+            [assigned, available],
+            group_count=2,
+            max_members=2,
+        )
+        group_ids = save_plan(self.project, plan)
+
+        self.assertEqual(len(group_ids), 1)
+        self.assertEqual(
+            GroupMember.objects.filter(group=existing, student=assigned).count(),
+            1,
+        )
+        self.assertEqual(
+            GroupMember.objects.filter(
+                student=assigned, group__project=self.project
+            ).count(),
+            0,
+        )
+        self.assertEqual(
+            GroupMember.objects.filter(
+                group__project=self.project, student=available
+            ).count(),
+            1,
+        )
+        self.assertFalse(
+            Group.objects.filter(project=self.project, members__isnull=True).exists()
+        )
+
+    def test_automated_formation_excludes_students_assigned_elsewhere(self):
+        self._login_instructor('formation-existing-member')
+        students = [
+            self._student(index + 1, {self.backend: 3}) for index in range(4)
+        ]
+        other_project = Project.objects.create(project_name='Other Project')
+        existing = Group.objects.create(
+            project=other_project, group_name='Existing Group'
+        )
+        GroupMember.objects.create(group=existing, student=students[0])
+        payload = {'project_id': self.project.project_id, 'max_members': 2}
+
+        preview = self.client.post(
+            reverse('students:group_automate_ajax'), payload
+        )
+        self.assertEqual(preview.status_code, 200)
+        preview_ids = [
+            member['student_id']
+            for group in preview.json()['groups']
+            for member in group['members']
+        ]
+        self.assertNotIn(students[0].student_id, preview_ids)
+        self.assertEqual(len(preview_ids), 3)
+
+        response = self.client.post(
+            reverse('students:group_automate_save_ajax'), payload
+        )
+
+        self.assertEqual(response.status_code, 200)
+        memberships = GroupMember.objects.filter(group__project=self.project)
+        self.assertEqual(memberships.count(), 3)
+        self.assertFalse(memberships.filter(student=students[0]).exists())
+        self.assertEqual(
+            GroupMember.objects.filter(student=students[0], group=existing).count(),
+            1,
+        )
+        student_ids = list(
+            GroupMember.objects.values_list('student_id', flat=True)
+        )
+        self.assertEqual(len(student_ids), len(set(student_ids)))
 
     def test_group_label_sequence(self):
         self.assertEqual(group_label(0), 'Group A')
@@ -1761,6 +1963,244 @@ class Stage7GroupFormationTests(UnmanagedTablesMixin, TransactionTestCase):
                 self.assertEqual(response.status_code, 400)
                 self.assertIn('error', response.json())
 
+    def test_formation_rejects_group_count_above_half_the_pool(self):
+        self._login_instructor('formation-half-pool')
+        for i in range(5):
+            self._student(i + 1, {self.backend: 3})
+
+        payload = {'project_id': self.project.project_id, 'group_count': 3}
+        for url_name in self._formation_urls():
+            with self.subTest(url=url_name):
+                response = self.client.post(reverse(url_name), payload)
+                self.assertEqual(response.status_code, 400)
+                self.assertIn('cannot exceed 2', response.json()['error'])
+                self.assertEqual(Group.objects.count(), 0)
+
+    def test_formation_rejects_group_count_equal_to_eligible_students(self):
+        self._login_instructor('formation-singletons')
+        for i in range(4):
+            self._student(i + 1, {self.backend: 3})
+
+        payload = {'project_id': self.project.project_id, 'group_count': 4}
+        for url_name in self._formation_urls():
+            with self.subTest(url=url_name):
+                response = self.client.post(reverse(url_name), payload)
+                self.assertEqual(response.status_code, 400)
+                self.assertIn(
+                    'at least 2 members', response.json()['error']
+                )
+                self.assertEqual(Group.objects.count(), 0)
+
+    def test_formation_rejects_group_count_above_ten(self):
+        self._login_instructor('formation-too-large')
+        for i in range(6):
+            self._student(i + 1, {self.backend: 3})
+
+        for group_count in (11, 10000000):
+            payload = {
+                'project_id': self.project.project_id,
+                'group_count': group_count,
+            }
+            for url_name in self._formation_urls():
+                with self.subTest(group_count=group_count, url=url_name):
+                    response = self.client.post(reverse(url_name), payload)
+                    self.assertEqual(response.status_code, 400)
+                    self.assertEqual(
+                        response.json()['error'],
+                        'Number of groups cannot exceed 10.',
+                    )
+                    self.assertEqual(Group.objects.count(), 0)
+
+    def test_group_page_eligible_count_is_global(self):
+        self._login_instructor('formation-eligible-count')
+        students = [
+            self._student(index + 1, {self.backend: 3}) for index in range(3)
+        ]
+        other_project = Project.objects.create(project_name='Other Project')
+        other_group = Group.objects.create(
+            project=other_project, group_name='Other Group'
+        )
+        GroupMember.objects.create(group=other_group, student=students[0])
+
+        response = self.client.get(reverse('students:group_list'))
+
+        self.assertEqual(response.status_code, 200)
+        projects = {
+            project.project_id: project
+            for project in response.context['all_projects']
+        }
+        self.assertEqual(projects[self.project.project_id].eligible_count, 2)
+        self.assertEqual(projects[other_project.project_id].eligible_count, 2)
+
+    def test_formation_group_limit_uses_only_eligible_students(self):
+        self._login_instructor('formation-eligible-only')
+        students = [
+            self._student(i + 1, {self.backend: 3}) for i in range(6)
+        ]
+        existing = Group.objects.create(
+            project=self.project, group_name='Existing Group'
+        )
+        for student in students[:2]:
+            GroupMember.objects.create(group=existing, student=student)
+
+        too_many = {'project_id': self.project.project_id, 'group_count': 3}
+        rejected = self.client.post(
+            reverse('students:group_automate_ajax'), too_many
+        )
+        self.assertEqual(rejected.status_code, 400)
+        self.assertIn('cannot exceed 2', rejected.json()['error'])
+
+        accepted = self.client.post(
+            reverse('students:group_automate_ajax'),
+            {'project_id': self.project.project_id, 'group_count': 2},
+        )
+        self.assertEqual(accepted.status_code, 200)
+        self.assertEqual(accepted.json()['group_count'], 2)
+        self.assertEqual(
+            sorted(g['size'] for g in accepted.json()['groups']), [2, 2]
+        )
+
+    def test_formation_accepts_maximum_even_pool_and_saves(self):
+        self._login_instructor('formation-even-pool')
+        for i in range(6):
+            self._student(i + 1, {self.backend: 3})
+
+        payload = {
+            'project_id': self.project.project_id,
+            'group_count': 3,
+            'max_members': 5,
+        }
+        preview = self.client.post(
+            reverse('students:group_automate_ajax'), payload
+        )
+        self.assertEqual(preview.status_code, 200)
+        self.assertEqual(preview.json()['group_count'], 3)
+        preview_sizes = [g['size'] for g in preview.json()['groups']]
+        self.assertEqual(preview_sizes, [2, 2, 2])
+        self.assertTrue(all(2 <= size <= 5 for size in preview_sizes))
+        self.assertEqual(Group.objects.count(), 0)
+
+        saved = self.client.post(
+            reverse('students:group_automate_save_ajax'), payload
+        )
+        self.assertEqual(saved.status_code, 200)
+        self.assertEqual(saved.json()['created'], 3)
+        saved_sizes = [
+            group.members.count()
+            for group in Group.objects.filter(project=self.project)
+        ]
+        self.assertEqual(saved_sizes, [2, 2, 2])
+        self.assertTrue(all(2 <= size <= 5 for size in saved_sizes))
+
+    def test_formation_accepts_ten_groups_and_saves(self):
+        self._login_instructor('formation-ten-groups')
+        for i in range(20):
+            self._student(i + 1, {self.backend: 3})
+
+        payload = {
+            'project_id': self.project.project_id,
+            'group_count': 10,
+            'max_members': 5,
+        }
+        preview = self.client.post(
+            reverse('students:group_automate_ajax'), payload
+        )
+        self.assertEqual(preview.status_code, 200)
+        self.assertEqual(preview.json()['group_count'], 10)
+        self.assertEqual(
+            [group['size'] for group in preview.json()['groups']], [2] * 10
+        )
+        self.assertEqual(Group.objects.count(), 0)
+
+        saved = self.client.post(
+            reverse('students:group_automate_save_ajax'), payload
+        )
+        self.assertEqual(saved.status_code, 200)
+        self.assertEqual(saved.json()['created'], 10)
+        self.assertEqual(Group.objects.filter(project=self.project).count(), 10)
+        self.assertEqual(
+            GroupMember.objects.filter(group__project=self.project).count(), 20
+        )
+
+    def test_formation_accepts_maximum_odd_pool_within_allowed_sizes(self):
+        self._login_instructor('formation-odd-pool')
+        for i in range(7):
+            self._student(i + 1, {self.backend: 3})
+
+        response = self.client.post(
+            reverse('students:group_automate_ajax'),
+            {'project_id': self.project.project_id, 'group_count': 3},
+        )
+        self.assertEqual(response.status_code, 200)
+        sizes = sorted(g['size'] for g in response.json()['groups'])
+        self.assertEqual(sizes, [2, 2, 3])
+        self.assertTrue(all(2 <= size <= 5 for size in sizes))
+
+    def test_formation_accepts_group_count_below_maximum(self):
+        self._login_instructor('formation-below-max')
+        for i in range(7):
+            self._student(i + 1, {self.backend: 3})
+
+        response = self.client.post(
+            reverse('students:group_automate_ajax'),
+            {'project_id': self.project.project_id, 'group_count': 2},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['group_count'], 2)
+        sizes = [g['size'] for g in response.json()['groups']]
+        self.assertTrue(all(2 <= size <= 5 for size in sizes))
+
+    def test_formation_blank_group_count_remains_automatic(self):
+        self._login_instructor('formation-blank-count')
+        for i in range(6):
+            self._student(i + 1, {self.backend: 3})
+
+        response = self.client.post(
+            reverse('students:group_automate_ajax'),
+            {
+                'project_id': self.project.project_id,
+                'group_count': '',
+                'max_members': 3,
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['group_count'], 2)
+        self.assertEqual(
+            [g['size'] for g in response.json()['groups']], [3, 3]
+        )
+
+    def test_formation_blank_group_count_is_capped_at_ten(self):
+        self._login_instructor('formation-blank-capped')
+        for i in range(21):
+            self._student(i + 1, {self.backend: 3})
+
+        response = self.client.post(
+            reverse('students:group_automate_ajax'),
+            {
+                'project_id': self.project.project_id,
+                'group_count': '',
+                'max_members': 2,
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data['group_count'], 10)
+        self.assertEqual(len(data['groups']), 10)
+        self.assertEqual([group['size'] for group in data['groups']], [2] * 10)
+        self.assertEqual(len(data['unassigned']), 1)
+        self.assertTrue(any('Capacity' in warning for warning in data['warnings']))
+
+    def test_group_page_exposes_maximum_formation_groups(self):
+        self._login_instructor('formation-page-limit')
+
+        response = self.client.get(reverse('students:group_list'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context['max_formation_groups'], 10)
+        self.assertContains(response, 'id="auto_group_count"')
+        self.assertContains(response, 'max="10"')
+        self.assertContains(response, 'data-max-groups="10"')
+
     def test_students_cannot_save_groups_but_may_preview(self):
         from apps.core.roles import ROLE_STUDENT, set_role
 
@@ -1777,6 +2217,82 @@ class Stage7GroupFormationTests(UnmanagedTablesMixin, TransactionTestCase):
         self.assertEqual(saved.status_code, 403)
         self.assertIn('error', saved.json())
         self.assertEqual(Group.objects.count(), 0)
+
+    def _assignment_status_fixture(self):
+        other_project = Project.objects.create(project_name='Other Capstone')
+        ProjectRequiredSkill.objects.create(
+            project=other_project, skill=self.backend, required_level=3
+        )
+        in_selected = self._student(1, {self.backend: 3, self.frontend: 3})
+        in_other = self._student(2, {self.backend: 3})
+        unassigned = self._student(3, {self.frontend: 3})
+        selected_group = Group.objects.create(
+            project=self.project, group_name='Selected Project Group'
+        )
+        other_group = Group.objects.create(
+            project=other_project, group_name='Other Project Group'
+        )
+        GroupMember.objects.create(group=selected_group, student=in_selected)
+        GroupMember.objects.create(group=other_group, student=in_other)
+        return other_project, in_selected, in_other, unassigned
+
+    def test_matching_page_distinguishes_group_assignment_statuses(self):
+        other_project, in_selected, in_other, unassigned = (
+            self._assignment_status_fixture()
+        )
+        manager = User.objects.create_user(username='matcher-status', password='secret1234')
+        self.client.force_login(manager)
+
+        response = self.client.get(
+            reverse('students:matching'), {'project': self.project.project_id}
+        )
+        self.assertEqual(response.status_code, 200)
+        results = {r['student_id']: r for r in response.context['results']}
+
+        self.assertTrue(results[in_selected.student_id]['assigned'])
+        self.assertFalse(results[in_selected.student_id]['assigned_elsewhere'])
+        self.assertFalse(results[in_other.student_id]['assigned'])
+        self.assertTrue(results[in_other.student_id]['assigned_elsewhere'])
+        self.assertEqual(
+            results[in_other.student_id]['other_project_name'],
+            other_project.project_name,
+        )
+        self.assertFalse(results[unassigned.student_id]['assigned'])
+        self.assertFalse(results[unassigned.student_id]['assigned_elsewhere'])
+
+        content = response.content.decode()
+        self.assertIn("In This Project's Group", content)
+        self.assertIn("In Another Project's Group", content)
+        self.assertIn('Unassigned', content)
+
+        self.assertEqual(results[in_selected.student_id]['score'], 100)
+        self.assertEqual(results[in_other.student_id]['score'], 50)
+        self.assertEqual(results[unassigned.student_id]['score'], 50)
+        scores = [r['score'] for r in response.context['results']]
+        self.assertEqual(scores, sorted(scores, reverse=True))
+
+    def test_matching_page_assignment_status_tracks_selected_project(self):
+        other_project, in_selected, in_other, unassigned = (
+            self._assignment_status_fixture()
+        )
+        manager = User.objects.create_user(username='matcher-switch', password='secret1234')
+        self.client.force_login(manager)
+
+        response = self.client.get(
+            reverse('students:matching'), {'project': other_project.project_id}
+        )
+        self.assertEqual(response.status_code, 200)
+        results = {r['student_id']: r for r in response.context['results']}
+
+        self.assertFalse(results[in_selected.student_id]['assigned'])
+        self.assertTrue(results[in_selected.student_id]['assigned_elsewhere'])
+        self.assertTrue(results[in_other.student_id]['assigned'])
+        self.assertFalse(results[in_other.student_id]['assigned_elsewhere'])
+        self.assertFalse(results[unassigned.student_id]['assigned'])
+        self.assertFalse(results[unassigned.student_id]['assigned_elsewhere'])
+
+        scores = [r['score'] for r in response.context['results']]
+        self.assertEqual(scores, sorted(scores, reverse=True))
 
     def test_matching_page_requires_login_and_renders(self):
         self.client.logout()
@@ -1828,3 +2344,233 @@ class Stage7GroupFormationTests(UnmanagedTablesMixin, TransactionTestCase):
         self.assertEqual(by_skill['Backend']['met_count'], 1)
         self.assertEqual(by_skill['Backend']['missing_count'], 1)
         self.assertEqual(by_skill['Backend']['coverage_pct'], 50)
+
+# ---------------------------------------------------------------------------
+# No-requirements display and "no remaining gaps" recommendations
+# ---------------------------------------------------------------------------
+
+@skipUnless(
+    connection.vendor == 'sqlite',
+    'DB-backed no-requirements tests run only with mysite.test_settings (SQLite).',
+)
+class NoRequirementsDisplayTests(UnmanagedTablesMixin, TransactionTestCase):
+    """A project without required skills must never render as a 100% match.
+
+    ``analyze_group_skills`` reports ``match_percentage``/``weighted_pct`` as
+    ``None`` and ``has_requirements=False`` so the group cards, the dashboard
+    and the roster modal show "No requirements set" instead of a misleading
+    full match. Percentages are unchanged whenever the project does define
+    requirements.
+    """
+
+    def setUp(self):
+        StudentSkill.objects.all().delete()
+        GroupMember.objects.all().delete()
+        ProjectRequiredSkill.objects.all().delete()
+        Group.objects.all().delete()
+        Project.objects.all().delete()
+        Student.objects.all().delete()
+        Skill.objects.all().delete()
+
+        self.project = Project.objects.create(project_name='Spec-less Capstone')
+        self.group = Group.objects.create(
+            project=self.project, group_name='Team Without Spec'
+        )
+        self.student = Student.objects.create(
+            student_number='2026-5001',
+            first_name='Nora',
+            last_name='Bautista',
+            email='nora@example.com',
+            course='BSIT',
+            section='3A',
+            year_level=3,
+        )
+        GroupMember.objects.create(group=self.group, student=self.student)
+        self.manager = User.objects.create_user(
+            username='no-requirements-manager', password='secret1234'
+        )
+
+    def _login(self):
+        self.client.force_login(self.manager)
+
+    def test_analysis_without_requirements_reports_no_percentage(self):
+        analysis = analyze_group_skills(self.group)
+
+        self.assertFalse(analysis['has_requirements'])
+        self.assertIsNone(analysis['match_percentage'])
+        self.assertIsNone(analysis['weighted_pct'])
+        self.assertEqual(analysis['total_required'], 0)
+
+        empty = Group.objects.create(
+            project=self.project, group_name='Empty Without Spec'
+        )
+        empty_analysis = analyze_group_skills(empty)
+        self.assertIsNone(empty_analysis['match_percentage'])
+        self.assertIsNone(empty_analysis['weighted_pct'])
+
+    def test_group_card_shows_no_requirements_instead_of_100_percent(self):
+        self._login()
+        response = self.client.get(reverse('students:group_list'))
+
+        self.assertEqual(response.status_code, 200)
+        content = response.content.decode()
+        self.assertIn('No requirements set', content)
+        self.assertNotIn('100% match', content)
+        self.assertNotIn('data-sg-width="100%"', content)
+
+    def test_dashboard_shows_no_requirements_instead_of_100_percent(self):
+        self._login()
+        response = self.client.get(reverse('dashboard'))
+
+        self.assertEqual(response.status_code, 200)
+        recent = response.context['analyzed_recent']
+        self.assertEqual(len(recent), 1)
+        self.assertIsNone(recent[0]['analysis']['match_percentage'])
+        content = response.content.decode()
+        self.assertIn('No requirements set', content)
+        self.assertNotIn('data-sg-width="100%"', content)
+
+    def test_roster_modal_payload_and_script_handle_no_requirements(self):
+        self._login()
+        response = self.client.get(
+            reverse('students:group_get_ajax', kwargs={'pk': self.group.group_id})
+        )
+
+        self.assertEqual(response.status_code, 200)
+        analysis = response.json()['analysis']
+        self.assertFalse(analysis['has_requirements'])
+        self.assertIsNone(analysis['match_percentage'])
+        self.assertIsNone(analysis['weighted_pct'])
+
+        # The modal is filled by JavaScript, which this suite does not execute,
+        # so assert the rendered page carries the guarded branch the modal uses.
+        page = self.client.get(reverse('students:group_list')).content.decode()
+        self.assertIn('if (!analysis.has_requirements)', page)
+        self.assertIn("badge.innerText = 'No requirements set';", page)
+
+    def test_analysis_with_requirements_still_scores_normally(self):
+        backend = Skill.objects.create(skill_name='Backend')
+        ProjectRequiredSkill.objects.create(
+            project=self.project, skill=backend, required_level=3
+        )
+        StudentSkill.objects.create(
+            student=self.student, skill=backend, proficiency_level=2
+        )
+
+        analysis = analyze_group_skills(self.group)
+
+        self.assertTrue(analysis['has_requirements'])
+        self.assertEqual(analysis['match_percentage'], 0)
+        self.assertEqual(analysis['deficient_count'], 1)
+        # Backend 2 of the required 3 = 67% weighted coverage.
+        self.assertEqual(analysis['weighted_pct'], 67)
+
+    def test_zero_required_level_does_not_break_weighting(self):
+        backend = Skill.objects.create(skill_name='Backend')
+        ProjectRequiredSkill.objects.create(
+            project=self.project, skill=backend, required_level=0
+        )
+        StudentSkill.objects.create(
+            student=self.student, skill=backend, proficiency_level=2
+        )
+
+        analysis = analyze_group_skills(self.group)
+
+        self.assertTrue(analysis['has_requirements'])
+        self.assertEqual(analysis['weighted_pct'], 0)
+        self.assertEqual(analysis['match_percentage'], 100)
+
+
+@skipUnless(
+    connection.vendor == 'sqlite',
+    'DB-backed recommendation tests run only with mysite.test_settings (SQLite).',
+)
+class NoRemainingGapRecommendationTests(UnmanagedTablesMixin, TransactionTestCase):
+    """A roster that already covers every requirement has no gap-fillers."""
+
+    def setUp(self):
+        StudentSkill.objects.all().delete()
+        GroupMember.objects.all().delete()
+        ProjectRequiredSkill.objects.all().delete()
+        Group.objects.all().delete()
+        Project.objects.all().delete()
+        Student.objects.all().delete()
+        Skill.objects.all().delete()
+
+        self.backend = Skill.objects.create(skill_name='Backend')
+        self.project = Project.objects.create(project_name='Covered Capstone')
+        ProjectRequiredSkill.objects.create(
+            project=self.project, skill=self.backend, required_level=3
+        )
+        self.manager = User.objects.create_user(
+            username='no-gap-manager', password='secret1234'
+        )
+
+    def _student(self, index, level=None):
+        student = Student.objects.create(
+            student_number=f'2026-61{index:02d}',
+            first_name=f'Student{index}',
+            last_name=f'Family{index}',
+            email=f'nogap{index}@example.com',
+            course='BSIT',
+            section='3B',
+            year_level=3,
+        )
+        if level is not None:
+            StudentSkill.objects.create(
+                student=student, skill=self.backend, proficiency_level=level
+            )
+        return student
+
+    def _group(self, name, member_level):
+        group = Group.objects.create(project=self.project, group_name=name)
+        member = self._student(len(name) + member_level * 10, member_level)
+        GroupMember.objects.create(group=group, student=member)
+        return group
+
+    def test_no_candidates_are_recommended_when_no_gap_remains(self):
+        group = self._group('Complete Team', 4)
+        self._student(90, 5)  # unassigned and over-qualified
+
+        self.assertEqual(recommend_candidates(group), [])
+
+        self.client.force_login(self.manager)
+        response = self.client.get(
+            reverse(
+                'students:group_recommendations_ajax',
+                kwargs={'group_pk': group.group_id},
+            )
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['recommendations'], [])
+
+    def test_assigned_students_stay_excluded_when_a_gap_remains(self):
+        group = self._group('Needs Backend', 1)
+        surplus = self._student(91, 5)
+        assigned_elsewhere = self._student(92, 5)
+        other_group = Group.objects.create(
+            project=self.project, group_name='Other Team'
+        )
+        GroupMember.objects.create(group=other_group, student=assigned_elsewhere)
+
+        recommendations = recommend_candidates(group)
+
+        self.assertEqual(
+            [r['student_id'] for r in recommendations],
+            [surplus.student_id],
+        )
+        self.assertEqual(recommendations[0]['gap_score'], 100)
+
+    def test_gap_fill_score_still_ranks_candidates_when_gaps_exist(self):
+        group = self._group('Partially Covered', 1)
+        surplus = self._student(93, 5)
+        partial = self._student(94, 1)
+        self._student(95)  # no recorded proficiency: lowest rank
+
+        recommendations = recommend_candidates(group)
+        by_id = {r['student_id']: r for r in recommendations}
+
+        # The member has level 1, so the outstanding deficit is 2 levels.
+        self.assertEqual(by_id[surplus.student_id]['gap_score'], 100)
+        self.assertEqual(by_id[partial.student_id]['gap_score'], 50)
+        self.assertEqual(recommendations[0]['student_id'], surplus.student_id)

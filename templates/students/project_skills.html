@@ -8,7 +8,7 @@
       <div class="col">
         <div class="page-pretitle">Requirements</div>
         <h2 class="page-title mb-1">Project Required Skills</h2>
-        <div class="sg-page-desc">Map the skills and proficiency levels each project expects from a team.</div>
+        <div class="sg-page-desc">Map the skills and proficiency levels each project expects, including projects that still need requirements.</div>
       </div>
       {% if can_manage %}
       <div class="col-auto ms-auto">
@@ -46,105 +46,166 @@
 
   <div id="projectSkillAlert" class="alert alert-danger d-none" role="alert"></div>
 
-  <div class="card">
-    <div class="card-header">
-      <div class="card-title">
-        Skill Requirements
-        {% if query %}
-        <span class="text-muted fw-normal">— search results for "{{ query }}"</span>
-        {% endif %}
+  <div class="row row-cards g-3 mb-4">
+    <div class="col-sm-6 col-xl-4">
+      <div class="card sg-stat sg-stat--violet sg-animate sg-animate-1">
+        <div class="card-body">
+          <div class="sg-stat-top"><span class="sg-stat-icon"><i class="fas fa-briefcase"></i></span></div>
+          <div class="sg-stat-label">Projects with Requirements</div>
+          <div class="sg-stat-value">{{ total_projects_with_requirements }}</div>
+          <div class="sg-stat-note"><i class="fas fa-circle"></i> out of {{ total_projects }} projects</div>
+        </div>
       </div>
     </div>
-    <div class="table-responsive">
-      <table class="table table-vcenter table-hover card-table text-nowrap" id="projectSkillTable">
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>Project</th>
-            <th>Skill</th>
-            <th>Required Level</th>
-            <th class="w-1">Actions</th>
-          </tr>
-        </thead>
-        <tbody id="projectSkillTableBody">
-        {% for requirement in requirements %}
-        <tr data-row-id="{{ requirement.project_skill_id }}">
-            <td class="text-muted">{{ forloop.counter0|add:requirements.start_index }}</td>
-            <td class="fw-semibold">{{ requirement.project.project_name }}</td>
-            <td class="text-muted">{{ requirement.skill.skill_name }}</td>
-            <td>
-              <span class="badge {% if requirement.required_level == 5 %}bg-green-lt text-green{% elif requirement.required_level == 4 %}bg-azure-lt text-azure{% elif requirement.required_level == 3 %}bg-primary-lt text-primary{% else %}bg-secondary-lt text-secondary{% endif %}">
-                {% if requirement.required_level == 5 %}Expert (5){% elif requirement.required_level == 4 %}Advanced (4){% elif requirement.required_level == 3 %}Intermediate (3){% elif requirement.required_level == 2 %}Elementary (2){% elif requirement.required_level == 1 %}Beginner (1){% else %}Level {{ requirement.required_level }}{% endif %}
-              </span>
-            </td>
-            <td>
-              {% if can_manage %}
-              <div class="d-flex gap-1">
-                <button type="button" class="btn btn-ghost-secondary btn-icon btn-sm" data-bs-toggle="modal" data-bs-target="#projectSkillModal" data-mode="edit" data-id="{{ requirement.project_skill_id }}" data-project-id="{{ requirement.project_id }}" data-skill-id="{{ requirement.skill_id }}" data-required-level="{{ requirement.required_level }}" title="Edit">
-                  <i class="fas fa-edit text-primary"></i>
-                </button>
-                <button type="button" class="btn btn-ghost-secondary btn-icon btn-sm" data-bs-toggle="modal" data-bs-target="#deleteProjectSkillModal" data-id="{{ requirement.project_skill_id }}" data-name="{{ requirement.project.project_name }} — {{ requirement.skill.skill_name }}" title="Remove">
-                  <i class="fas fa-trash-alt text-danger"></i>
-                </button>
-              </div>
-              {% endif %}
-            </td>
-        </tr>
-        {% empty %}
-        <tr>
-            <td colspan="5">
-                <div class="empty py-5">
-                    <div class="empty-icon">
-                        <i class="fas fa-check-double fa-2x text-muted"></i>
-                    </div>
-                    <p class="empty-title">No required skills found</p>
-                    <p class="empty-subtitle">Try adjusting your search or add a required skill to a project.</p>
-                    <div class="empty-action">
-{% if can_manage %}
-                        <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#projectSkillModal" data-mode="create" {% if not all_projects or not all_skills %}disabled title="Add projects and skills first"{% endif %}>
-                            <i class="fas fa-plus-circle me-2"></i> Add Required Skill
-                        </button>
-{% endif %}
-                    </div>
-                </div>
-            </td>
-        </tr>
-        {% endfor %}
-        </tbody>
-      </table>
+    <div class="col-sm-6 col-xl-4">
+      <div class="card sg-stat sg-stat--cyan sg-animate sg-animate-2">
+        <div class="card-body">
+          <div class="sg-stat-top"><span class="sg-stat-icon"><i class="fas fa-list-check"></i></span></div>
+          <div class="sg-stat-label">Required-Skill Assignments</div>
+          <div class="sg-stat-value">{{ total_requirements }}</div>
+          <div class="sg-stat-note"><i class="fas fa-circle"></i> recorded across all projects</div>
+        </div>
+      </div>
     </div>
+    <div class="col-sm-6 col-xl-4">
+      <div class="card sg-stat sg-stat--teal sg-animate sg-animate-3">
+        <div class="card-body">
+          <div class="sg-stat-top"><span class="sg-stat-icon"><i class="fas fa-layer-group"></i></span></div>
+          <div class="sg-stat-label">Available Skills</div>
+          <div class="sg-stat-value">{{ total_available_skills }}</div>
+          <div class="sg-stat-note"><i class="fas fa-circle"></i> in the skill catalog</div>
+        </div>
+      </div>
+    </div>
+  </div>
 
-    {% if requirements.paginator.num_pages > 1 %}
+  <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+    <div class="text-muted">
+      {{ projects.paginator.count }} project{{ projects.paginator.count|pluralize }}
+      {% if query %} matching "{{ query }}"{% endif %}
+    </div>
+    {% if not query %}<span class="sg-tag sg-tag-muted">Showing every project, including those without requirements</span>{% endif %}
+  </div>
+
+  <div id="projectRequirementsList" class="d-flex flex-column gap-3">
+    {% for project in projects %}
+    <div class="card sg-animate">
+      <div class="card-header d-flex align-items-center justify-content-between flex-wrap gap-2">
+        <div class="d-flex align-items-center gap-2">
+          <span class="sg-panel-accent"><i class="fas fa-briefcase"></i></span>
+          <div>
+            <div class="card-title mb-0">{{ project.project_name }}</div>
+            {% with requirement_count=project.prefetched_requirements|length %}
+            <div class="sg-panel-sub">
+              {{ requirement_count }} required skill{{ requirement_count|pluralize }}
+            </div>
+            {% endwith %}
+          </div>
+        </div>
+        <button type="button" class="btn btn-sm btn-outline-primary project-requirements-toggle" data-bs-toggle="collapse" data-bs-target="#projectRequirements{{ project.project_id }}" aria-expanded="false" aria-controls="projectRequirements{{ project.project_id }}">
+          <i class="fas fa-chevron-down me-1"></i> View Requirements
+        </button>
+      </div>
+      <div class="collapse" id="projectRequirements{{ project.project_id }}" data-bs-parent="#projectRequirementsList">
+        <div class="card-body p-0">
+          {% if project.prefetched_requirements %}
+          <div class="table-responsive">
+            <table class="table table-vcenter table-hover card-table mb-0 text-nowrap">
+              <thead>
+                <tr>
+                  <th>Skill</th>
+                  <th>Required Level</th>
+                  {% if can_manage %}<th class="w-1">Actions</th>{% endif %}
+                </tr>
+              </thead>
+              <tbody>
+                {% for requirement in project.prefetched_requirements %}
+                <tr>
+                  <td class="fw-semibold">{{ requirement.skill.skill_name }}</td>
+                  <td>
+                    <span class="badge {% if requirement.required_level == 5 %}bg-green-lt text-green{% elif requirement.required_level == 4 %}bg-azure-lt text-azure{% elif requirement.required_level == 3 %}bg-primary-lt text-primary{% else %}bg-secondary-lt text-secondary{% endif %}">
+                      {% if requirement.required_level == 5 %}Expert (5){% elif requirement.required_level == 4 %}Advanced (4){% elif requirement.required_level == 3 %}Intermediate (3){% elif requirement.required_level == 2 %}Elementary (2){% elif requirement.required_level == 1 %}Beginner (1){% else %}Level {{ requirement.required_level }}{% endif %}
+                    </span>
+                  </td>
+                  {% if can_manage %}
+                  <td>
+                    <div class="d-flex gap-1">
+                      <button type="button" class="btn btn-ghost-secondary btn-icon btn-sm" data-bs-toggle="modal" data-bs-target="#projectSkillModal" data-mode="edit" data-id="{{ requirement.project_skill_id }}" data-project-id="{{ requirement.project_id }}" data-skill-id="{{ requirement.skill_id }}" data-required-level="{{ requirement.required_level }}" title="Edit">
+                        <i class="fas fa-edit text-primary"></i>
+                      </button>
+                      <button type="button" class="btn btn-ghost-secondary btn-icon btn-sm" data-bs-toggle="modal" data-bs-target="#deleteProjectSkillModal" data-id="{{ requirement.project_skill_id }}" data-name="{{ project.project_name }} — {{ requirement.skill.skill_name }}" title="Remove">
+                        <i class="fas fa-trash-alt text-danger"></i>
+                      </button>
+                    </div>
+                  </td>
+                  {% endif %}
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% else %}
+          <div class="p-4 text-center text-muted">
+            <i class="fas fa-circle-info me-1"></i> No required skills added yet.
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    {% empty %}
+    <div class="card">
+      <div class="empty py-5">
+        <div class="empty-icon">
+          <i class="fas fa-check-double fa-2x text-muted"></i>
+        </div>
+        <p class="empty-title">No projects found</p>
+        <p class="empty-subtitle">{% if query %}Try adjusting your search.{% else %}Add a project first, then assign its required skills.{% endif %}</p>
+        <div class="empty-action">
+          {% if query %}
+          <a href="{% url 'students:project_skill_list' %}" class="btn btn-outline-primary">Clear search</a>
+          {% elif can_manage %}
+          <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#projectSkillModal" data-mode="create" {% if not all_projects or not all_skills %}disabled title="Add projects and skills first"{% endif %}>
+            <i class="fas fa-plus-circle me-2"></i> Add Required Skill
+          </button>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  {% if projects.paginator.num_pages > 1 %}
+  <div class="card mt-3">
     <div class="card-footer d-flex align-items-center">
       <p class="m-0 text-muted">
-        Showing <span class="fw-medium">{{ requirements.start_index }}</span>
-        to <span class="fw-medium">{{ requirements.end_index }}</span>
-        of <span class="fw-medium">{{ requirements.paginator.count }}</span> requirements
+        Showing <span class="fw-medium">{{ projects.start_index }}</span>
+        to <span class="fw-medium">{{ projects.end_index }}</span>
+        of <span class="fw-medium">{{ projects.paginator.count }}</span> projects
       </p>
       <ul class="pagination m-0 ms-auto">
-        {% if requirements.has_previous %}
+        {% if projects.has_previous %}
         <li class="page-item">
-          <a class="page-link" href="?page={{ requirements.previous_page_number }}{% if query %}&q={{ query }}{% endif %}">
+          <a class="page-link" href="?page={{ projects.previous_page_number }}{% if query %}&amp;q={{ query|urlencode }}{% endif %}">
             <i class="ti ti-chevron-left"></i> prev
           </a>
         </li>
         {% endif %}
-        {% for num in requirements.paginator.page_range %}
-        <li class="page-item {% if requirements.number == num %}active{% endif %}">
-          <a class="page-link" href="?page={{ num }}{% if query %}&q={{ query }}{% endif %}">{{ num }}</a>
+        {% for num in projects.paginator.page_range %}
+        <li class="page-item {% if projects.number == num %}active{% endif %}">
+          <a class="page-link" href="?page={{ num }}{% if query %}&amp;q={{ query|urlencode }}{% endif %}">{{ num }}</a>
         </li>
         {% endfor %}
-        {% if requirements.has_next %}
+        {% if projects.has_next %}
         <li class="page-item">
-          <a class="page-link" href="?page={{ requirements.next_page_number }}{% if query %}&q={{ query }}{% endif %}">
+          <a class="page-link" href="?page={{ projects.next_page_number }}{% if query %}&amp;q={{ query|urlencode }}{% endif %}">
             next <i class="ti ti-chevron-right"></i>
           </a>
         </li>
         {% endif %}
       </ul>
     </div>
-    {% endif %}
   </div>
+  {% endif %}
 </div>
 
 <div class="modal modal-blur fade" id="projectSkillModal" tabindex="-1">
@@ -309,6 +370,23 @@
         alertBox.classList.remove('d-none');
         bootstrap.Modal.getInstance(deleteModalEl).hide();
       }
+    });
+  });
+})();
+
+(function() {
+  document.querySelectorAll('.project-requirements-toggle').forEach(function(button) {
+    const target = document.querySelector(button.getAttribute('data-bs-target'));
+    if (!target) return;
+
+    target.addEventListener('show.bs.collapse', function() {
+      button.innerHTML = '<i class="fas fa-chevron-up me-1"></i> Hide Requirements';
+      button.setAttribute('aria-expanded', 'true');
+    });
+
+    target.addEventListener('hide.bs.collapse', function() {
+      button.innerHTML = '<i class="fas fa-chevron-down me-1"></i> View Requirements';
+      button.setAttribute('aria-expanded', 'false');
     });
   });
 })();

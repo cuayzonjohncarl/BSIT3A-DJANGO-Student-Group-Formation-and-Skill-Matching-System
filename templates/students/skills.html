@@ -46,80 +46,81 @@
 
   <div id="skillAlert" class="alert alert-danger d-none" role="alert"></div>
 
-  <div class="card">
-    <div class="card-header">
-      <div class="card-title">
-        All Skills
-        {% if query %}
-        <span class="text-muted fw-normal">— search results for "{{ query }}"</span>
-        {% endif %}
+  <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+    <div class="card-title mb-0">
+      All Skills
+      {% if query %}
+      <span class="text-muted fw-normal">— search results for "{{ query }}"</span>
+      {% endif %}
+    </div>
+  </div>
+
+  <div id="skillDescriptionList" class="d-flex flex-column gap-3">
+    {% for skill in skills %}
+    <div class="card sg-animate" data-row-id="{{ skill.skill_id }}">
+      <div class="card-header d-flex align-items-center justify-content-between flex-wrap gap-2">
+        <div class="d-flex align-items-center gap-2">
+          <span class="sg-panel-accent"><i class="fas fa-lightbulb"></i></span>
+          <div>
+            <div class="card-title mb-0">
+              {{ skill.skill_name }}
+              <span class="text-muted fw-normal small">#{{ forloop.counter0|add:skills.start_index }}</span>
+            </div>
+            <div class="sg-panel-sub">
+              {% if skill.description %}Description available{% else %}No description provided{% endif %}
+            </div>
+          </div>
+        </div>
+        <div class="d-flex align-items-center gap-1 flex-wrap">
+          {% if skill.description %}
+          <button type="button" class="btn btn-sm btn-outline-primary skill-description-toggle" data-bs-toggle="collapse" data-bs-target="#skillDescription{{ skill.skill_id }}" aria-expanded="false" aria-controls="skillDescription{{ skill.skill_id }}">
+            <i class="fas fa-chevron-down me-1"></i> View Description
+          </button>
+          {% endif %}
+          {% if can_manage %}
+          <button type="button" class="btn btn-ghost-secondary btn-icon btn-sm" data-bs-toggle="modal" data-bs-target="#skillModal" data-mode="edit" data-id="{{ skill.skill_id }}" data-skill-name="{{ skill.skill_name }}" data-description="{{ skill.description|default_if_none:'' }}" title="Edit">
+            <i class="fas fa-edit text-primary"></i>
+          </button>
+          <button type="button" class="btn btn-ghost-secondary btn-icon btn-sm" data-bs-toggle="modal" data-bs-target="#deleteSkillModal" data-id="{{ skill.skill_id }}" data-name="{{ skill.skill_name }}" title="Delete">
+            <i class="fas fa-trash-alt text-danger"></i>
+          </button>
+          {% endif %}
+        </div>
+      </div>
+      {% if skill.description %}
+      <div class="collapse" id="skillDescription{{ skill.skill_id }}" data-bs-parent="#skillDescriptionList">
+        <div class="card-body">
+          <div class="skill-description-text">{{ skill.description|linebreaksbr }}</div>
+        </div>
+      </div>
+      {% else %}
+      <div class="card-body py-3">
+        <span class="text-muted small">No description provided.</span>
+      </div>
+      {% endif %}
+    </div>
+    {% empty %}
+    <div class="card">
+      <div class="empty py-5">
+          <div class="empty-icon">
+              <i class="fas fa-lightbulb fa-2x text-muted"></i>
+          </div>
+          <p class="empty-title">No skills found</p>
+          <p class="empty-subtitle">Try adjusting your search or add a new skill.</p>
+          <div class="empty-action">
+{% if can_manage %}
+              <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#skillModal" data-mode="create">
+                  <i class="fas fa-plus-circle me-2"></i> Add Skill
+              </button>
+{% endif %}
+          </div>
       </div>
     </div>
-    <div class="table-responsive">
-      <table class="table table-vcenter table-hover card-table text-nowrap" id="skillTable">
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>Skill Name</th>
-            <th>Description</th>
-            <th class="w-1">Actions</th>
-          </tr>
-        </thead>
-        <tbody id="skillTableBody">
-        {% for skill in skills %}
-        <tr data-row-id="{{ skill.skill_id }}">
-            <td class="text-muted">{{ forloop.counter0|add:skills.start_index }}</td>
-            <td class="fw-semibold">{{ skill.skill_name }}</td>
-            <td class="text-muted">
-              {% if skill.description %}
-              <div class="skill-desc-cell">
-                <button type="button" class="btn btn-link text-start p-0 skill-desc-preview-btn" data-description="{{ skill.description|escape }}" title="Click to view full description">
-                  <span class="skill-desc-preview">{{ skill.description }}</span>
-                </button>
-                <button type="button" class="btn btn-link btn-sm p-0 skill-desc-view" data-description="{{ skill.description|escape }}">View description</button>
-              </div>
-              {% else %}
-              —
-              {% endif %}
-            </td>
-            <td>
-              {% if can_manage %}
-              <div class="d-flex gap-1">
-                <button type="button" class="btn btn-ghost-secondary btn-icon btn-sm" data-bs-toggle="modal" data-bs-target="#skillModal" data-mode="edit" data-id="{{ skill.skill_id }}" data-skill-name="{{ skill.skill_name }}" data-description="{{ skill.description|default_if_none:'' }}" title="Edit">
-                  <i class="fas fa-edit text-primary"></i>
-                </button>
-                <button type="button" class="btn btn-ghost-secondary btn-icon btn-sm" data-bs-toggle="modal" data-bs-target="#deleteSkillModal" data-id="{{ skill.skill_id }}" data-name="{{ skill.skill_name }}" title="Delete">
-                  <i class="fas fa-trash-alt text-danger"></i>
-                </button>
-              </div>
-              {% endif %}
-            </td>
-        </tr>
-        {% empty %}
-        <tr>
-            <td colspan="4">
-                <div class="empty py-5">
-                    <div class="empty-icon">
-                        <i class="fas fa-lightbulb fa-2x text-muted"></i>
-                    </div>
-                    <p class="empty-title">No skills found</p>
-                    <p class="empty-subtitle">Try adjusting your search or add a new skill.</p>
-                    <div class="empty-action">
-{% if can_manage %}
-                        <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#skillModal" data-mode="create">
-                            <i class="fas fa-plus-circle me-2"></i> Add Skill
-                        </button>
-{% endif %}
-                    </div>
-                </div>
-            </td>
-        </tr>
-        {% endfor %}
-        </tbody>
-      </table>
-    </div>
+    {% endfor %}
+  </div>
 
-    {% if skills.paginator.num_pages > 1 %}
+  {% if skills.paginator.num_pages > 1 %}
+  <div class="card mt-3">
     <div class="card-footer d-flex align-items-center">
       <p class="m-0 text-muted">
         Showing <span class="fw-medium">{{ skills.start_index }}</span>
@@ -148,8 +149,8 @@
         {% endif %}
       </ul>
     </div>
-    {% endif %}
   </div>
+  {% endif %}
 </div>
 
 <div class="modal modal-blur fade" id="skillModal" tabindex="-1">
@@ -202,61 +203,22 @@
   </div>
 </div>
 
-<div class="modal modal-blur fade" id="viewSkillDescriptionModal" tabindex="-1">
-  <div class="modal-dialog modal-md modal-dialog-centered modal-dialog-scrollable">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title">Skill Description</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-      </div>
-      <div class="modal-body">
-        <div id="viewSkillDescriptionContent" class="text-break" style="white-space: pre-wrap; word-break: break-word;"></div>
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Close</button>
-      </div>
-    </div>
-  </div>
-</div>
-
 <style>
-  #skillTable td:nth-child(2),
-  #skillTable th:nth-child(2),
-  #skillTable td:nth-child(3),
-  #skillTable th:nth-child(3) {
-    white-space: normal !important;
+  #skillDescriptionList .card-header {
+    padding: 0.95rem 1.15rem;
+  }
+  .skill-description-text {
+    color: var(--sg-text-2);
+    line-height: 1.65;
+    overflow-wrap: anywhere;
     word-break: break-word;
   }
-  .skill-desc-cell {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0.25rem;
-    max-width: 420px;
-  }
-  .skill-desc-preview-btn {
-    text-decoration: none;
-    color: inherit;
-    width: 100%;
-    text-align: left;
-  }
-  .skill-desc-preview-btn:hover .skill-desc-preview,
-  .skill-desc-preview-btn:focus .skill-desc-preview {
-    color: var(--tblr-primary);
-  }
-  .skill-desc-preview {
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    color: inherit;
-    word-break: break-word;
+  .skill-description-toggle {
+    white-space: nowrap;
   }
   @media (max-width: 576px) {
-    .skill-desc-cell {
-      max-width: 260px;
+    .skill-description-toggle {
+      width: 100%;
     }
   }
 </style>
@@ -360,31 +322,18 @@
     });
   });
 
-  const viewDescModalEl = document.getElementById('viewSkillDescriptionModal');
-  const viewDescContent = document.getElementById('viewSkillDescriptionContent');
-  function openViewDescription(desc) {
-    if (viewDescContent) {
-      viewDescContent.textContent = desc || '';
-    }
-    if (viewDescModalEl && window.bootstrap) {
-      const modal = bootstrap.Modal.getOrCreateInstance(viewDescModalEl);
-      modal.show();
-    }
-  }
+  document.querySelectorAll('.skill-description-toggle').forEach(function(button) {
+    const target = document.querySelector(button.getAttribute('data-bs-target'));
+    if (!target) return;
 
-  document.querySelectorAll('.skill-desc-view').forEach(function(btn) {
-    btn.addEventListener('click', function(e) {
-      e.preventDefault();
-      const desc = btn.getAttribute('data-description') || '';
-      openViewDescription(desc);
+    target.addEventListener('show.bs.collapse', function() {
+      button.innerHTML = '<i class="fas fa-chevron-up me-1"></i> Hide Description';
+      button.setAttribute('aria-expanded', 'true');
     });
-  });
 
-  document.querySelectorAll('.skill-desc-preview-btn').forEach(function(btn) {
-    btn.addEventListener('click', function(e) {
-      e.preventDefault();
-      const desc = btn.getAttribute('data-description') || '';
-      openViewDescription(desc);
+    target.addEventListener('hide.bs.collapse', function() {
+      button.innerHTML = '<i class="fas fa-chevron-down me-1"></i> View Description';
+      button.setAttribute('aria-expanded', 'false');
     });
   });
 })();

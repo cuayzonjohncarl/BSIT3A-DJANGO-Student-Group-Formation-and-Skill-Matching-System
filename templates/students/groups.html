@@ -1,6 +1,6 @@
 {% extends "theme/base.html" %}
-{% block title %}Groups &amp; Skill Matching - Student Group Formation and Skill Matching System{% endblock %}
-{% block topbar_title %}Groups &amp; Skill Matching{% endblock %}
+{% block title %}Group Formation &amp; Gaps - Student Group Formation and Skill Matching System{% endblock %}
+{% block topbar_title %}Group Formation &amp; Gaps{% endblock %}
 {% block content %}
 <div class="container-xl pt-3 pb-4" id="groupPage" data-can-manage="{{ can_manage|yesno:'true,false' }}">
 
@@ -9,7 +9,7 @@
     <div class="row align-items-center g-3">
       <div class="col">
         <div class="page-pretitle">Formation &amp; Matching</div>
-        <h2 class="page-title mb-1">Groups &amp; Skill Matching</h2>
+        <h2 class="page-title mb-1">Group Formation &amp; Gaps</h2>
         <div class="sg-page-desc">Form project teams, track required-skill coverage, and review recommended students.</div>
       </div>
       <div class="col-auto ms-auto d-print-none">
@@ -101,13 +101,19 @@
           <!-- Compatibility -->
           <div class="sg-match-row">
             <span class="sg-match-label">Skill compatibility</span>
+            {% if not item.analysis.has_requirements %}
+            <span class="text-muted small">No requirements set</span>
+            {% else %}
             <span class="badge {% if item.analysis.match_percentage == 100 %}bg-success-lt text-success{% elif item.analysis.match_percentage >= 50 %}bg-warning-lt text-warning{% else %}bg-danger-lt text-danger{% endif %}">
               {{ item.analysis.match_percentage }}% match
             </span>
+            {% endif %}
           </div>
+          {% if item.analysis.has_requirements %}
           <div class="progress progress-sm">
             <div class="progress-bar {% if item.analysis.match_percentage == 100 %}bg-success{% elif item.analysis.match_percentage >= 50 %}bg-warning{% else %}bg-danger{% endif %}" data-sg-width="{{ item.analysis.match_percentage }}%" role="progressbar" aria-valuenow="{{ item.analysis.match_percentage }}" aria-valuemin="0" aria-valuemax="100"></div>
           </div>
+          {% endif %}
 
           <!-- Requirement coverage -->
           <div class="sg-req-box">
@@ -286,7 +292,7 @@
               <select id="mm_student_select" class="form-select" required>
                 <option value="">Loading eligible students...</option>
               </select>
-              <small class="form-hint">Only students not yet assigned to any group for this project are listed.</small>
+              <small class="form-hint">Only students not yet assigned to any group in the system are listed.</small>
             </div>
             <div class="col-sm-4 text-sm-end">
               <button type="submit" class="btn btn-primary w-100" id="addMemberBtn">
@@ -359,7 +365,7 @@
         <div>
           <div class="mb-2">
             <h5 class="fw-semibold mb-0"><i class="fas fa-wand-magic-sparkles me-1" style="color: var(--sg-violet);"></i> Recommended Students</h5>
-            <div class="text-muted small">Ranked by coverage of this project's required skills. Students already assigned to a group for this project are excluded.</div>
+            <div class="text-muted small">Ranked by coverage of this project's required skills. Students already assigned to any group in the system are excluded.</div>
           </div>
           <div id="mm_recommendations" class="row g-2">
             <div class="col-12 text-center text-muted py-3">Loading recommendations...</div>
@@ -386,14 +392,14 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body">
-        <form id="automateForm" class="row g-3 align-items-end mb-3">
+        <form id="automateForm" class="row g-3 align-items-end mb-3" novalidate>
           {% csrf_token %}
           <div class="col-md-4">
             <label class="form-label required" for="auto_project_id">Project</label>
             <select id="auto_project_id" name="project_id" class="form-select" required>
               <option value="">&mdash; Select a project &mdash;</option>
               {% for p in all_projects %}
-              <option value="{{ p.project_id }}">{{ p.project_name }}</option>
+              <option value="{{ p.project_id }}" data-eligible-count="{{ p.eligible_count }}">{{ p.project_name }}</option>
               {% endfor %}
             </select>
           </div>
@@ -404,8 +410,8 @@
           </div>
           <div class="col-md-3">
             <label class="form-label" for="auto_group_count">Number of groups</label>
-            <input type="number" id="auto_group_count" name="group_count" class="form-control" min="1" placeholder="Auto" inputmode="numeric">
-            <small class="form-hint">Leave blank to derive from the pool size.</small>
+            <input type="number" id="auto_group_count" name="group_count" class="form-control" min="1" max="{{ max_formation_groups }}" step="1" data-max-groups="{{ max_formation_groups }}" placeholder="Auto" inputmode="numeric">
+            <small class="form-hint">Leave blank to derive from the pool size (maximum {{ max_formation_groups }} groups).</small>
           </div>
           <div class="col-md-2">
             <button type="submit" class="btn btn-outline-primary w-100" id="previewPlanBtn">
@@ -579,10 +585,19 @@
   function renderSkillsAnalysisTable(analysis) {
     const tbody = document.getElementById('mm_skills_table_body');
     const badge = document.getElementById('mm_match_badge');
-    badge.innerText = `${analysis.match_percentage}% match`;
-
     const percentEl = document.getElementById('mm_match_percent');
     const barEl = document.getElementById('mm_match_bar');
+
+    if (!analysis.has_requirements) {
+      badge.innerText = 'No requirements set';
+      badge.className = 'badge bg-secondary-lt text-secondary';
+      if (percentEl) percentEl.innerText = '\u2014';
+      if (barEl) barEl.style.width = '0%';
+      tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3">No required skills defined for this project yet.</td></tr>';
+      return;
+    }
+
+    badge.innerText = `${analysis.match_percentage}% match`;
     if (percentEl) percentEl.innerText = `${analysis.match_percentage}%`;
     if (barEl) barEl.style.width = `${analysis.match_percentage}%`;
 
@@ -662,7 +677,7 @@
           <div class="sg-rec-empty text-center">
             <i class="fas fa-user-check fa-lg mb-2 d-block" style="color: var(--sg-text-3);"></i>
             <div class="fw-semibold" style="color: var(--sg-text);">No recommendations available</div>
-            <div>Add project required skills or release unassigned students to see matches.</div>
+            <div>Add project required skills, or release unassigned students. A team that already covers every requirement has no gaps left to fill.</div>
           </div>
         </div>`;
       return;
@@ -770,7 +785,7 @@
     .then(data => {
       select.innerHTML = '';
       if (!data.students || data.students.length === 0) {
-        select.innerHTML = '<option value="">All students are already assigned to groups for this project</option>';
+        select.innerHTML = '<option value="">All students are already assigned to a group</option>';
         if (addBtn) addBtn.disabled = true;
         return;
       }
@@ -860,6 +875,11 @@
   // ---- Automated group formation ----------------------------------------
   const automateForm = document.getElementById('automateForm');
   if (automateForm) {
+    const autoProjectSelect = document.getElementById('auto_project_id');
+    if (autoProjectSelect) {
+      autoProjectSelect.addEventListener('change', syncGroupCountMax);
+    }
+    syncGroupCountMax();
     automateForm.addEventListener('submit', function (e) {
       e.preventDefault();
       previewPlan();
@@ -874,6 +894,71 @@
     box.classList.remove('d-none');
   }
 
+  function selectedProjectEligibleCount() {
+    const select = document.getElementById('auto_project_id');
+    if (!select || !select.value) return null;
+    const option = select.options[select.selectedIndex];
+    if (!option) return null;
+    const count = Number.parseInt(option.dataset.eligibleCount, 10);
+    return Number.isNaN(count) ? null : count;
+  }
+
+  function syncGroupCountMax() {
+    const input = document.getElementById('auto_group_count');
+    if (!input) return;
+    const cap = Number.parseInt(input.dataset.maxGroups, 10) || 10;
+    const eligible = selectedProjectEligibleCount();
+    input.max = String(
+      eligible === null ? cap : Math.min(cap, Math.floor(eligible / 2))
+    );
+  }
+
+  function validateAutomationInput() {
+    const projectSelect = document.getElementById('auto_project_id');
+    if (!projectSelect || !projectSelect.value) {
+      autoShowAlert('Please select a project.');
+      return false;
+    }
+
+    const maxMembersInput = document.getElementById('auto_max_members');
+    const maxMembersRaw = (maxMembersInput.value || '').trim();
+    if (maxMembersRaw) {
+      const maxMembers = Number(maxMembersRaw);
+      if (!Number.isInteger(maxMembers) || maxMembers < 2 || maxMembers > 5) {
+        autoShowAlert('Group size must be a whole number between 2 and 5.');
+        return false;
+      }
+    }
+
+    const groupCountInput = document.getElementById('auto_group_count');
+    const groupCountRaw = (groupCountInput.value || '').trim();
+    if (!groupCountRaw) return true;
+
+    const groupCount = Number(groupCountRaw);
+    if (!Number.isInteger(groupCount) || groupCount < 1) {
+      autoShowAlert('Number of groups must be a positive whole number.');
+      return false;
+    }
+    const groupCap = Number.parseInt(groupCountInput.dataset.maxGroups, 10) || 10;
+    if (groupCount > groupCap) {
+      autoShowAlert(`Number of groups cannot exceed ${groupCap}.`);
+      return false;
+    }
+
+    const eligible = selectedProjectEligibleCount();
+    if (eligible !== null) {
+      const maxGroups = Math.floor(eligible / 2);
+      if (groupCount > maxGroups) {
+        autoShowAlert(eligible < 2
+          ? 'At least 2 eligible students are required to form a group.'
+          : `Number of groups cannot exceed ${maxGroups} for ${eligible} eligible student(s) because each group must have at least 2 members. Leave Number of groups blank to calculate automatically.`);
+        return false;
+      }
+    }
+
+    return true;
+  }
+
   function previewPlan() {
     const preview = document.getElementById('autoPreview');
     const saveBtn = document.getElementById('savePlanBtn');
@@ -882,6 +967,13 @@
 
     autoShowAlert(null);
     saveBtn.disabled = true;
+    if (!validateAutomationInput()) {
+      document.getElementById('autoWarnings').innerHTML = '';
+      document.getElementById('autoStats').innerText = '';
+      preview.innerHTML =
+        '<div class="sg-rec-empty text-center py-4"><i class="fas fa-triangle-exclamation fa-lg d-block mb-2" style="color: var(--sg-coral);"></i>No plan to show yet.</div>';
+      return;
+    }
     document.getElementById('autoWarnings').innerHTML = '';
     document.getElementById('autoStats').innerText = '';
     btn.disabled = true;
@@ -966,6 +1058,7 @@
     const saveBtn = document.getElementById('savePlanBtn');
     autoShowAlert(null);
     saveBtn.disabled = true;
+    if (!validateAutomationInput()) return;
 
     const formData = new FormData(automateForm);
     const csrfToken = automateForm.querySelector('[name=csrfmiddlewaretoken]').value;

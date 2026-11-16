@@ -1,6 +1,6 @@
 {% extends "theme/base.html" %}
-{% block title %}Skill Matching - Student Group Formation and Skill Matching System{% endblock %}
-{% block topbar_title %}Skill Matching{% endblock %}
+{% block title %}Student&ndash;Project Matching - Student Group Formation and Skill Matching System{% endblock %}
+{% block topbar_title %}Student&ndash;Project Matching{% endblock %}
 {% block content %}
 <div class="container-xl pt-3 pb-4">
 
@@ -9,7 +9,7 @@
     <div class="row align-items-center g-3">
       <div class="col">
         <div class="page-pretitle">Matching</div>
-        <h2 class="page-title mb-1">Skill Matching Engine</h2>
+        <h2 class="page-title mb-1">Student&ndash;Project Matching</h2>
         <div class="sg-page-desc">
           Compatibility index between every student's skill inventory and the selected project's requirement matrix.
         </div>
@@ -193,7 +193,9 @@
             </td>
             <td>
               {% if r.assigned %}
-              <span class="badge bg-primary-lt text-primary"><i class="fas fa-people-group me-1"></i>In a group</span>
+              <span class="badge bg-primary-lt text-primary"><i class="fas fa-people-group me-1"></i>In This Project's Group</span>
+              {% elif r.assigned_elsewhere %}
+              <span class="badge bg-warning-lt text-warning" title="{{ r.other_group_name }}{% if r.other_group_name and r.other_project_name %} &mdash; {% endif %}{{ r.other_project_name }}"><i class="fas fa-people-group me-1"></i>In Another Project's Group</span>
               {% else %}
               <span class="badge bg-secondary-lt text-secondary">Unassigned</span>
               {% endif %}
@@ -275,9 +277,18 @@
       btn.addEventListener('click', function () {
         var row = document.getElementById(btn.getAttribute('aria-controls'));
         if (!row) return;
-        var open = btn.getAttribute('aria-expanded') === 'true';
-        btn.setAttribute('aria-expanded', open ? 'false' : 'true');
-        row.hidden = open;
+        var willOpen = btn.getAttribute('aria-expanded') !== 'true';
+
+        buttons.forEach(function (otherBtn) {
+          if (otherBtn === btn) return;
+          var otherRow = document.getElementById(otherBtn.getAttribute('aria-controls'));
+          if (!otherRow) return;
+          otherBtn.setAttribute('aria-expanded', 'false');
+          otherRow.hidden = true;
+        });
+
+        btn.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+        row.hidden = !willOpen;
       });
     });
   })();
