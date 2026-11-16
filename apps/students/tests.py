@@ -2032,13 +2032,105 @@ class Stage7GroupFormationTests(UnmanagedTablesMixin, TransactionTestCase):
         self.assertEqual(projects[self.project.project_id].eligible_count, 2)
         self.assertEqual(projects[other_project.project_id].eligible_count, 2)
 
+    def test_automation_dropdown_lists_only_projects_without_groups(self):
+        self._login_instructor('formation-dropdown')
+        grouped_project = Project.objects.create(project_name='Grouped Project')
+        Group.objects.create(project=grouped_project, group_name='Existing Group')
+
+        response = self.client.get(reverse('students:group_list'))
+
+        self.assertEqual(response.status_code, 200)
+        formation_ids = [
+            project.project_id
+            for project in response.context['formation_projects']
+        ]
+        self.assertIn(self.project.project_id, formation_ids)
+        self.assertNotIn(grouped_project.project_id, formation_ids)
+
+        html = response.content.decode()
+        auto_select = html.split(
+            'id="auto_project_id"', 1
+        )[1].split('</select>', 1)[0]
+        self.assertIn(self.project.project_name, auto_select)
+        self.assertNotIn(grouped_project.project_name, auto_select)
+
+    def test_formation_rejects_project_with_existing_groups(self):
+        self._login_instructor('formation-grouped-project')
+        students = [
+            self._student(i + 1, {self.backend: 3}) for i in range(4)
+        ]
+        existing = Group.objects.create(
+            project=self.project, group_name='Existing Group'
+        )
+        GroupMember.objects.create(group=existing, student=students[0])
+        group_snapshot = list(
+            Group.objects.values_list('group_id', 'group_name', 'project_id')
+        )
+        member_snapshot = list(
+            GroupMember.objects.values_list(
+                'group_member_id', 'group_id', 'student_id'
+            )
+        )
+
+        payload = {'project_id': self.project.project_id, 'max_members': 2}
+        for url_name in self._formation_urls():
+            with self.subTest(url=url_name):
+                response = self.client.post(reverse(url_name), payload)
+                self.assertEqual(response.status_code, 400)
+                self.assertIn(
+                    'already has existing groups', response.json()['error']
+                )
+
+        self.assertEqual(
+            list(Group.objects.values_list(
+                'group_id', 'group_name', 'project_id'
+            )),
+            group_snapshot,
+        )
+        self.assertEqual(
+            list(GroupMember.objects.values_list(
+                'group_member_id', 'group_id', 'student_id'
+            )),
+            member_snapshot,
+        )
+
+    def test_formation_still_works_when_other_projects_have_groups(self):
+        self._login_instructor('formation-other-grouped')
+        grouped_project = Project.objects.create(project_name='Grouped Project')
+        existing = Group.objects.create(
+            project=grouped_project, group_name='Existing Group'
+        )
+        for i in range(4):
+            self._student(i + 1, {self.backend: 3})
+
+        payload = {'project_id': self.project.project_id, 'max_members': 2}
+        preview = self.client.post(
+            reverse('students:group_automate_ajax'), payload
+        )
+        self.assertEqual(preview.status_code, 200)
+        self.assertEqual(preview.json()['group_count'], 2)
+
+        saved = self.client.post(
+            reverse('students:group_automate_save_ajax'), payload
+        )
+        self.assertEqual(saved.status_code, 200)
+        self.assertEqual(saved.json()['created'], 2)
+        self.assertEqual(
+            Group.objects.filter(project=self.project).count(), 2
+        )
+        self.assertEqual(
+            GroupMember.objects.filter(group__project=self.project).count(), 4
+        )
+        self.assertEqual(GroupMember.objects.filter(group=existing).count(), 0)
+
     def test_formation_group_limit_uses_only_eligible_students(self):
         self._login_instructor('formation-eligible-only')
         students = [
             self._student(i + 1, {self.backend: 3}) for i in range(6)
         ]
+        other_project = Project.objects.create(project_name='Other Project')
         existing = Group.objects.create(
-            project=self.project, group_name='Existing Group'
+            project=other_project, group_name='Existing Group'
         )
         for student in students[:2]:
             GroupMember.objects.create(group=existing, student=student)

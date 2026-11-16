@@ -1122,7 +1122,9 @@ def group_list_page(request):
             'analysis': analysis,
         })
 
-    all_projects = list(Project.objects.all().order_by('project_name'))
+    all_projects = list(
+        Project.objects.annotate(group_count=Count('groups')).order_by('project_name')
+    )
     total_students = Student.objects.count()
     globally_assigned_count = (
         GroupMember.objects.values('student_id').distinct().count()
@@ -1132,12 +1134,17 @@ def group_list_page(request):
             total_students - globally_assigned_count, 0
         )
 
+    formation_projects = [
+        project for project in all_projects if project.group_count == 0
+    ]
+
     return render(request, 'students/groups.html', {
         'page_obj': page_obj,
         'analyzed_groups': analyzed_groups,
         'query': query,
         'project_filter': project_filter,
         'all_projects': all_projects,
+        'formation_projects': formation_projects,
         'max_formation_groups': MAX_FORMATION_GROUPS,
     })
 
@@ -1401,6 +1408,13 @@ def _formation_parameters(request):
     if project_pk is None:
         return None, None, None, 'Invalid project reference.'
     project = get_object_or_404(Project, pk=project_pk)
+
+    if project.groups.exists():
+        return (
+            None, None, None,
+            f'"{project.project_name}" already has existing groups and is not '
+            'available for automated group formation.',
+        )
 
     max_members_raw = (request.POST.get('max_members') or '').strip()
     if max_members_raw:
